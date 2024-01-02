@@ -1,0 +1,29 @@
+version: '3.8'
+services:
+  web:
+    build:
+      context: ./app
+    stop_signal: SIGKILL
+    ports:
+      - 5000:5000
+    networks:
+      - mynetwork
+    depends_on:
+      - postgres
+
+  postgres:
+    image: postgres
+    environment:
+      - POSTGRES_USER=${POSTGRES_USER}
+      - POSTGRES_PASSWORD=${POSTGRES_PASSWORD}
+    ports:
+      - 5432:5432
+    volumes:
+      - /postgres/db/:/var/lib/postgresql/data
+    networks:
+      - mynetwork
+
+
+networks:
+  mynetwork:
+    driver: bridge
