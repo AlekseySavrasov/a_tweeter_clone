@@ -1,12 +1,9 @@
-import uvicorn
 from fastapi import FastAPI
 from sqlalchemy import select
-# from sqlalchemy.orm import selectinload
 
-from database import Base, engine, async_session
-from models import Item
+from app.models import Base, engine, async_session, Item
 
-app = FastAPI()
+app: FastAPI = FastAPI()
 
 
 @app.on_event("startup")
@@ -31,7 +28,7 @@ async def startup():
 async def insert_product_handler():
     async with async_session() as session:
         async with session.begin():
-            a_item = Item(title="new item")
+            a_item = Item(name="new item")
             session.add(a_item)
             await session.flush()
 
@@ -40,20 +37,12 @@ async def insert_product_handler():
 async def get_items_handler():
     async with async_session() as session:
         async with session.begin():
-            # without user
             q = await session.execute(select(Item))
-            # withuser
-            # q = await session.execute(
-            #     select(Item).options(selectinload(Item.name)))
 
             items = q.scalars().all()
             items_list = []
             for p in items:
                 product_obj = p.to_json()
-                # product_obj["item"] = p.name.to_json()
                 items_list.append(product_obj)
             return items_list
 
-
-if __name__ == "__main__":
-    uvicorn.run("fastapi_app:app", port=5000, host="0.0.0.0")
