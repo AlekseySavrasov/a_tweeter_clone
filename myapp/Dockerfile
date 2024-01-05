@@ -7,11 +7,8 @@ RUN apt-get update  \
 COPY requirements.txt /myapp/
 RUN pip install -r /myapp/requirements.txt
 
-
 COPY . /myapp
-
-COPY nginx.conf /etc/nginx/nginx.conf
 
 WORKDIR /myapp
 
-CMD ["uvicorn", "app.fastapi_app:app", "--host", "0.0.0.0", "--port", "80"]
+CMD ["uvicorn", "app.fastapi_app:app", "--host", "0.0.0.0", "--port", "8000"]
