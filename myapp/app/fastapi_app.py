@@ -1,10 +1,11 @@
-from fastapi import FastAPI
+from fastapi import FastAPI, Header, HTTPException, Depends
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.database import Base, engine, async_session
-from app.models import Item
+from app.models import Tweet, User
+from app import schemas, models
 
 app = FastAPI()
 
@@ -29,9 +30,9 @@ async def startup():
         async with session.begin():
             session.add_all(
                 [
-                    Item(name="item1"),
-                    Item(name="item2"),
-                    Item(name="item3"),
+                    User(name="user_1", secret_key="$BSSh6@lfkj"),
+                    User(name="user_2", secret_key="kBSkfjSh6@f"),
+                    User(name="user_3", secret_key="dBS[pw;olSh"),
                 ]
             )
             await session.commit()
@@ -53,29 +54,32 @@ async def log_requests(request, call_next):
     return response
 
 
-@app.get('/ping')
+@app.get("/hello")
 async def main():
-    return {"Success": True}
+    return {"Hello, World!"}
 
 
-@app.post('/items', status_code=201)
-async def insert_product_handler():
+async def get_api_key(api_key: str = Header(...)):
+    """Проверка API-ключа"""
     async with async_session() as session:
         async with session.begin():
-            a_item = Item(name="new item")
-            session.add(a_item)
+            user = await session.execute(
+                select(models.User).filter(models.User.secret_key == api_key)
+            )
+            if not user.scalar_one_or_none():
+                raise HTTPException(status_code=401, detail="Invalid API Key")
+            return api_key
+
+
+@app.post("/api/tweets", status_code=201, response_model=schemas.TweetOut)
+async def add_tweet(tweet: schemas.TweetIn, user: models.User = Depends(get_api_key)):
+    async with async_session() as session:
+        async with session.begin():
+            tweet_data = models.Tweet(**tweet.dict())
+            session.add(tweet_data)
             await session.flush()
-
-
-@app.get('/items')
-async def get_items_handler():
-    async with async_session() as session:
-        async with session.begin():
-            q = await session.execute(select(Item))
-
-            items = q.scalars().all()
-            items_list = []
-            for p in items:
-                product_obj = p.to_json()
-                items_list.append(product_obj)
-            return items_list
+            tweet_id = await session.execute(
+                select(models.Tweet.id).where(models.Tweet.tweet_data == tweet.tweet_data)
+            )
+            t_id = tweet_id.scalar_one_or_none()
+            return {"result": True, "id": t_id}
