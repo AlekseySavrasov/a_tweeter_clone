@@ -1,12 +1,10 @@
-from typing import List, Optional
-
 from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.database import Base, engine, async_session
-from app.models import Like, Media, Tweet, User
+from app.models import Follower, Like, Media, Tweet, User
 from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult
 
 app = FastAPI()
@@ -150,17 +148,14 @@ async def delete_tweet(
     status_code=201,
     response_model=OperationResult
 )
-async def add_tweet(
+async def add_like(
         tweet_id: int,
         user: User = Depends(check_api_key)
 ):
-    """Установление лайка на твит"""
+    """Установление лайка на твит по id"""
     async with async_session() as session:
         async with session.begin():
-            like = Like(
-                tweet_id=tweet_id,
-                user_id=user.id
-            )
+            like = Like(tweet_id=tweet_id, user_id=user.id)
             session.add(like)
             await session.flush()
 
@@ -172,11 +167,11 @@ async def add_tweet(
     status_code=202,
     response_model=OperationResult
 )
-async def add_tweet(
+async def delete_like(
         tweet_id: int,
         user: User = Depends(check_api_key)
 ):
-    """Установление лайка на твит"""
+    """Удаление лайка с твита"""
     async with async_session() as session:
         async with session.begin():
             unlike = await session.execute(
@@ -188,6 +183,55 @@ async def add_tweet(
                 raise HTTPException(status_code=404, detail="Like not found")
 
             await session.delete(unlike)
+            await session.commit()
+
+    return {"result": True}
+
+
+@app.post(
+    "/api/users/{follow_id}/follow",
+    status_code=201,
+    response_model=OperationResult
+)
+async def add_follow(
+        follow_id: int,
+        user: User = Depends(check_api_key)
+):
+    """Follow другого пользователя по id"""
+    async with async_session() as session:
+        async with session.begin():
+
+            if follow_id == user.id:
+                raise HTTPException(status_code=404, detail="User can't follow himself")
+
+            follow = Follower(src_id=user.id, dst_id=follow_id)
+            session.add(follow)
+            await session.flush()
+
+    return {"result": True}
+
+
+@app.delete(
+    "/api/users/{follow_id}/follow",
+    status_code=202,
+    response_model=OperationResult
+)
+async def delete_follow(
+        follow_id: int,
+        user: User = Depends(check_api_key)
+):
+    """Удаление лайка с твита"""
+    async with async_session() as session:
+        async with session.begin():
+            unfollow = await session.execute(
+                select(Follower).where(Follower.dst_id == follow_id, Follower.src_id == user.id)
+            )
+            unfollow = unfollow.scalar_one_or_none()
+
+            if not unfollow:
+                raise HTTPException(status_code=404, detail="Follow not found")
+
+            await session.delete(unfollow)
             await session.commit()
 
     return {"result": True}

@@ -12,7 +12,7 @@ class Tweet(Base):
     id = Column(Integer, Sequence("tweet_id_seq"), primary_key=True, index=True)
     tweet_data = Column(String(280), nullable=False)
     tweet_media_ids = Column(ARRAY(Integer))
-    user_id = Column(Integer, ForeignKey('users.id'))
+    user_id = Column(Integer, ForeignKey('users.id'), index=True)
     user = relationship("User", backref="tweets")
 
     def __repr__(self):
@@ -49,7 +49,16 @@ class Like(Base):
     __tablename__ = "likes"
 
     id = Column(Integer, Sequence("like_id_seq"), primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey('users.id'))
+    user_id = Column(Integer, ForeignKey('users.id'), index=True)
     user = relationship("User", backref="likes")
-    tweet_id = Column(Integer, ForeignKey('tweets.id'))
+    tweet_id = Column(Integer, ForeignKey('tweets.id'), index=True)
     tweet = relationship("Tweet", backref="likes")
+
+
+class Follower(Base):
+    __tablename__ = "followers"
+    id = Column(Integer, Sequence("like_id_seq"), primary_key=True, index=True)
+    src_id = Column(Integer, ForeignKey('users.id'), index=True)
+    dst_id = Column(Integer, ForeignKey('users.id'), index=True)
+    src_user = relationship("User", foreign_keys=[src_id])
+    dst_user = relationship("User", foreign_keys=[dst_id])
