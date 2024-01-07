@@ -1,15 +1,11 @@
-from typing import List
+from typing import List, Optional
 
 from pydantic import BaseModel
 
 
-class BaseTweet(BaseModel):
+class TweetIn(BaseModel):
     tweet_data: str
-    tweet_media_ids: List[int] = []
-
-
-class TweetIn(BaseTweet):
-    ...
+    tweet_media_ids: Optional[List[int]] = None
 
 
 class TweetOut(BaseModel):

@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Header, HTTPException, Depends
+from typing import List, Optional
+
+from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File, Form
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
@@ -59,27 +61,48 @@ async def main():
     return {"Hello, World!"}
 
 
-async def get_api_key(api_key: str = Header(...)):
+async def check_api_key(api_key: str = Header(...)):
     """Проверка API-ключа"""
     async with async_session() as session:
         async with session.begin():
             user = await session.execute(
                 select(models.User).filter(models.User.secret_key == api_key)
             )
-            if not user.scalar_one_or_none():
+            i_user = user.scalar_one_or_none()
+
+            if not i_user:
                 raise HTTPException(status_code=401, detail="Invalid API Key")
-            return api_key
+            return i_user
 
 
 @app.post("/api/tweets", status_code=201, response_model=schemas.TweetOut)
-async def add_tweet(tweet: schemas.TweetIn, user: models.User = Depends(get_api_key)):
+async def add_tweet(
+        data: schemas.TweetIn,
+        user: models.User = Depends(check_api_key)
+):
     async with async_session() as session:
         async with session.begin():
-            tweet_data = models.Tweet(**tweet.dict())
-            session.add(tweet_data)
-            await session.flush()
-            tweet_id = await session.execute(
-                select(models.Tweet.id).where(models.Tweet.tweet_data == tweet.tweet_data)
+            tweet = models.Tweet(
+                tweet_data=data.tweet_data,
+                tweet_media_ids=data.tweet_media_ids,
+                user_id=user.id
             )
-            t_id = tweet_id.scalar_one_or_none()
-            return {"result": True, "id": t_id}
+            session.add(tweet)
+            await session.flush()
+            return {"result": True, "id": tweet.id}
+
+
+@app.post("/api/medias", response_model=schemas.MediaResponse)
+async def upload_media(
+        file: UploadFile = File(...),
+        user: models.User = Depends(check_api_key)
+):
+    """Эндпоинт для сохранения файла и получения его ID"""
+    async with async_session() as session:
+        async with session.begin():
+            media = models.Media(file=file.filename)
+            session.add(media)
+            await session.flush()
+            media_id = media.id
+
+    return {"result": True, "media_id": media_id}

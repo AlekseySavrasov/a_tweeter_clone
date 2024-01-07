@@ -1,6 +1,6 @@
 from typing import Dict, Any
 
-from sqlalchemy import Column, String, Integer, Sequence, ARRAY, ForeignKey
+from sqlalchemy import Column, String, Integer, Sequence, ARRAY, ForeignKey, LargeBinary
 
 from app.database import Base
 from sqlalchemy.orm import relationship
@@ -11,7 +11,7 @@ class Tweet(Base):
 
     id = Column(Integer, Sequence("tweet_id_seq"), primary_key=True, index=True)
     tweet_data = Column(String(280), nullable=False)
-    tweet_media_ids = Column(ARRAY(String))
+    tweet_media_ids = Column(ARRAY(Integer))
     user_id = Column(Integer, ForeignKey('users.id'))
     user = relationship("User", backref="tweets")
 
@@ -36,3 +36,10 @@ class User(Base):
     def to_json(self) -> Dict[str, Any]:
         return {c.name: getattr(self, c.name) for c in
                 self.__table__.columns}
+
+
+class Media(Base):
+    __tablename__ = "medias"
+
+    id = Column(Integer, Sequence("media_id_seq"), primary_key=True, index=True)
+    file = Column(String)  # возможно изменение типа колонки на LargeBinary
