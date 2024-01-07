@@ -68,11 +68,11 @@ async def check_api_key(api_key: str = Header(...)):
             user = await session.execute(
                 select(models.User).filter(models.User.secret_key == api_key)
             )
-            i_user = user.scalar_one_or_none()
+            user = user.scalar_one_or_none()
 
-            if not i_user:
+            if not user:
                 raise HTTPException(status_code=401, detail="Invalid API Key")
-            return i_user
+            return user
 
 
 @app.post("/api/tweets", status_code=201, response_model=schemas.TweetOut)
@@ -80,6 +80,7 @@ async def add_tweet(
         data: schemas.TweetIn,
         user: models.User = Depends(check_api_key)
 ):
+    """Добавление нового твита"""
     async with async_session() as session:
         async with session.begin():
             tweet = models.Tweet(
@@ -89,15 +90,16 @@ async def add_tweet(
             )
             session.add(tweet)
             await session.flush()
-            return {"result": True, "id": tweet.id}
+
+    return {"result": True, "id": tweet.id}
 
 
-@app.post("/api/medias", response_model=schemas.MediaResponse)
+@app.post("/api/medias", status_code=201, response_model=schemas.MediaResponse)
 async def upload_media(
         file: UploadFile = File(...),
         user: models.User = Depends(check_api_key)
 ):
-    """Эндпоинт для сохранения файла и получения его ID"""
+    """Сохранения файла и получения его ID"""
     async with async_session() as session:
         async with session.begin():
             media = models.Media(file=file.filename)
@@ -106,3 +108,26 @@ async def upload_media(
             media_id = media.id
 
     return {"result": True, "media_id": media_id}
+
+
+@app.delete("/api/tweets/{tweet_id}", status_code=202, response_model=schemas.OperationResult)
+async def delete_tweet(
+    tweet_id: int,
+    user: models.User = Depends(check_api_key),
+):
+    """Удаляем твит по его идентификатору"""
+    async with async_session() as session:
+        async with session.begin():
+            tweet = await session.execute(select(Tweet).where(Tweet.id == tweet_id))
+            tweet = tweet.scalar_one_or_none()
+
+            if not tweet:
+                raise HTTPException(status_code=404, detail="Tweet not found")
+
+            if tweet.user_id != user.id:
+                raise HTTPException(status_code=403, detail="You are not allowed to delete this tweet")
+
+            await session.delete(tweet)
+            await session.commit()
+
+    return {"result": True}

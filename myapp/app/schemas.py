@@ -16,3 +16,7 @@ class TweetOut(BaseModel):
 class MediaResponse(BaseModel):
     result: bool
     media_id: int
+
+
+class OperationResult(BaseModel):
+    result: bool
