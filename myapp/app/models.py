@@ -43,3 +43,13 @@ class Media(Base):
 
     id = Column(Integer, Sequence("media_id_seq"), primary_key=True, index=True)
     file = Column(String)  # возможно изменение типа колонки на LargeBinary
+
+
+class Like(Base):
+    __tablename__ = "likes"
+
+    id = Column(Integer, Sequence("like_id_seq"), primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey('users.id'))
+    user = relationship("User", backref="likes")
+    tweet_id = Column(Integer, ForeignKey('tweets.id'))
+    tweet = relationship("Tweet", backref="likes")

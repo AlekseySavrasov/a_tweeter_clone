@@ -1,13 +1,13 @@
 from typing import List, Optional
 
-from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File, Form
+from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import select
 
 from app.database import Base, engine, async_session
-from app.models import Tweet, User
-from app import schemas, models
+from app.models import Like, Media, Tweet, User
+from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult
 
 app = FastAPI()
 
@@ -66,7 +66,7 @@ async def check_api_key(api_key: str = Header(...)):
     async with async_session() as session:
         async with session.begin():
             user = await session.execute(
-                select(models.User).filter(models.User.secret_key == api_key)
+                select(User).filter(User.secret_key == api_key)
             )
             user = user.scalar_one_or_none()
 
@@ -75,15 +75,19 @@ async def check_api_key(api_key: str = Header(...)):
             return user
 
 
-@app.post("/api/tweets", status_code=201, response_model=schemas.TweetOut)
+@app.post(
+    "/api/tweets",
+    status_code=201,
+    response_model=TweetOut
+)
 async def add_tweet(
-        data: schemas.TweetIn,
-        user: models.User = Depends(check_api_key)
+        data: TweetIn,
+        user: User = Depends(check_api_key)
 ):
     """Добавление нового твита"""
     async with async_session() as session:
         async with session.begin():
-            tweet = models.Tweet(
+            tweet = Tweet(
                 tweet_data=data.tweet_data,
                 tweet_media_ids=data.tweet_media_ids,
                 user_id=user.id
@@ -94,15 +98,19 @@ async def add_tweet(
     return {"result": True, "id": tweet.id}
 
 
-@app.post("/api/medias", status_code=201, response_model=schemas.MediaResponse)
+@app.post(
+    "/api/medias",
+    status_code=201,
+    response_model=MediaResponse
+)
 async def upload_media(
         file: UploadFile = File(...),
-        user: models.User = Depends(check_api_key)
+        user: User = Depends(check_api_key)
 ):
     """Сохранения файла и получения его ID"""
     async with async_session() as session:
         async with session.begin():
-            media = models.Media(file=file.filename)
+            media = Media(file=file.filename)
             session.add(media)
             await session.flush()
             media_id = media.id
@@ -110,10 +118,14 @@ async def upload_media(
     return {"result": True, "media_id": media_id}
 
 
-@app.delete("/api/tweets/{tweet_id}", status_code=202, response_model=schemas.OperationResult)
+@app.delete(
+    "/api/tweets/{tweet_id}",
+    status_code=202,
+    response_model=OperationResult
+)
 async def delete_tweet(
-    tweet_id: int,
-    user: models.User = Depends(check_api_key),
+        tweet_id: int,
+        user: User = Depends(check_api_key),
 ):
     """Удаляем твит по его идентификатору"""
     async with async_session() as session:
@@ -128,6 +140,54 @@ async def delete_tweet(
                 raise HTTPException(status_code=403, detail="You are not allowed to delete this tweet")
 
             await session.delete(tweet)
+            await session.commit()
+
+    return {"result": True}
+
+
+@app.post(
+    "/api/tweets/{tweet_id}/likes",
+    status_code=201,
+    response_model=OperationResult
+)
+async def add_tweet(
+        tweet_id: int,
+        user: User = Depends(check_api_key)
+):
+    """Установление лайка на твит"""
+    async with async_session() as session:
+        async with session.begin():
+            like = Like(
+                tweet_id=tweet_id,
+                user_id=user.id
+            )
+            session.add(like)
+            await session.flush()
+
+    return {"result": True}
+
+
+@app.delete(
+    "/api/tweets/{tweet_id}/likes",
+    status_code=202,
+    response_model=OperationResult
+)
+async def add_tweet(
+        tweet_id: int,
+        user: User = Depends(check_api_key)
+):
+    """Установление лайка на твит"""
+    async with async_session() as session:
+        async with session.begin():
+            unlike = await session.execute(
+                select(Like).where(Like.tweet_id == tweet_id, Like.user_id == user.id)
+            )
+            unlike = unlike.scalar_one_or_none()
+
+            if not unlike:
+                raise HTTPException(status_code=404, detail="Like not found")
+
+            await session.delete(unlike)
             await session.commit()
 
     return {"result": True}
