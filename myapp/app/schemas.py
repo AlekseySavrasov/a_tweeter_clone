@@ -5,7 +5,7 @@ from pydantic import BaseModel
 
 class TweetIn(BaseModel):
     tweet_data: str
-    tweet_media_ids: Optional[List[int]] = None
+    tweet_media_ids: Optional[List[int]]
 
 
 class TweetOut(BaseModel):
@@ -20,3 +20,28 @@ class MediaResponse(BaseModel):
 
 class OperationResult(BaseModel):
     result: bool
+
+
+class UserDetail(BaseModel):
+    id: int
+    name: str
+
+
+class Like(BaseModel):
+    user_id: Optional[int]
+    name: Optional[str]
+
+
+class TweetResponse(BaseModel):
+    id: Optional[int] = None
+    content: Optional[str] = None
+    attachments: Optional[List[int]] = None
+    author: Optional[UserDetail] = None
+    likes: Optional[List[Like]] = None
+
+
+class UserProfileResponse(BaseModel):
+    result: bool
+    user: UserDetail
+    followers: Optional[List[UserDetail]] = []
+    following: Optional[List[UserDetail]] = []

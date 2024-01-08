@@ -1,13 +1,21 @@
 from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
-from sqlalchemy import select
+from fastapi.staticfiles import StaticFiles
+from pathlib import Path
+from sqlalchemy import select, join
 
 from app.database import Base, engine, async_session
 from app.models import Follower, Like, Media, Tweet, User
-from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult
+from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, TweetResponse, UserDetail, \
+    UserProfileResponse
+from sqlalchemy.orm import selectinload, joinedload
 
 app = FastAPI()
+static_path = Path(__file__).parent.parent / "static"
+print(static_path)
+app.mount("/static", StaticFiles(directory=static_path), name="static")
+logger.setLevel("INFO")
 
 app.add_middleware(
     CORSMiddleware,
@@ -33,6 +41,7 @@ async def startup():
                     User(name="user_1", secret_key="$BSSh6@lfkj"),
                     User(name="user_2", secret_key="kBSkfjSh6@f"),
                     User(name="user_3", secret_key="dBS[pw;olSh"),
+                    Tweet(tweet_data="text", user_id=1)
                 ]
             )
             await session.commit()
@@ -73,15 +82,8 @@ async def check_api_key(api_key: str = Header(...)):
             return user
 
 
-@app.post(
-    "/api/tweets",
-    status_code=201,
-    response_model=TweetOut
-)
-async def add_tweet(
-        data: TweetIn,
-        user: User = Depends(check_api_key)
-):
+@app.post("/api/tweets", status_code=201, response_model=TweetOut)
+async def add_tweet(data: TweetIn, user: User = Depends(check_api_key)):
     """Добавление нового твита"""
     async with async_session() as session:
         async with session.begin():
@@ -96,35 +98,8 @@ async def add_tweet(
     return {"result": True, "id": tweet.id}
 
 
-@app.post(
-    "/api/medias",
-    status_code=201,
-    response_model=MediaResponse
-)
-async def upload_media(
-        file: UploadFile = File(...),
-        user: User = Depends(check_api_key)
-):
-    """Сохранения файла и получения его ID"""
-    async with async_session() as session:
-        async with session.begin():
-            media = Media(file=file.filename)
-            session.add(media)
-            await session.flush()
-            media_id = media.id
-
-    return {"result": True, "media_id": media_id}
-
-
-@app.delete(
-    "/api/tweets/{tweet_id}",
-    status_code=202,
-    response_model=OperationResult
-)
-async def delete_tweet(
-        tweet_id: int,
-        user: User = Depends(check_api_key),
-):
+@app.delete("/api/tweets/{tweet_id}", status_code=202, response_model=OperationResult)
+async def delete_tweet(tweet_id: int, user: User = Depends(check_api_key)):
     """Удаляем твит по его идентификатору"""
     async with async_session() as session:
         async with session.begin():
@@ -143,15 +118,8 @@ async def delete_tweet(
     return {"result": True}
 
 
-@app.post(
-    "/api/tweets/{tweet_id}/likes",
-    status_code=201,
-    response_model=OperationResult
-)
-async def add_like(
-        tweet_id: int,
-        user: User = Depends(check_api_key)
-):
+@app.post("/api/tweets/{tweet_id}/likes", status_code=201, response_model=OperationResult)
+async def add_like(tweet_id: int, user: User = Depends(check_api_key)):
     """Установление лайка на твит по id"""
     async with async_session() as session:
         async with session.begin():
@@ -162,15 +130,8 @@ async def add_like(
     return {"result": True}
 
 
-@app.delete(
-    "/api/tweets/{tweet_id}/likes",
-    status_code=202,
-    response_model=OperationResult
-)
-async def delete_like(
-        tweet_id: int,
-        user: User = Depends(check_api_key)
-):
+@app.delete("/api/tweets/{tweet_id}/likes", status_code=202, response_model=OperationResult)
+async def delete_like(tweet_id: int, user: User = Depends(check_api_key)):
     """Удаление лайка с твита"""
     async with async_session() as session:
         async with session.begin():
@@ -188,43 +149,28 @@ async def delete_like(
     return {"result": True}
 
 
-@app.post(
-    "/api/users/{follow_id}/follow",
-    status_code=201,
-    response_model=OperationResult
-)
-async def add_follow(
-        follow_id: int,
-        user: User = Depends(check_api_key)
-):
+@app.post("/api/users/{follow_id}/follow", status_code=201, response_model=OperationResult)
+async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
     """Follow другого пользователя по id"""
     async with async_session() as session:
         async with session.begin():
-
             if follow_id == user.id:
                 raise HTTPException(status_code=404, detail="User can't follow himself")
 
-            follow = Follower(src_id=user.id, dst_id=follow_id)
+            follow = Follower(follower_id=user.id, followed_id=follow_id)
             session.add(follow)
             await session.flush()
 
     return {"result": True}
 
 
-@app.delete(
-    "/api/users/{follow_id}/follow",
-    status_code=202,
-    response_model=OperationResult
-)
-async def delete_follow(
-        follow_id: int,
-        user: User = Depends(check_api_key)
-):
-    """Удаление лайка с твита"""
+@app.delete("/api/users/{follow_id}/follow", status_code=202, response_model=OperationResult)
+async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
+    """Unfollow другого пользователя"""
     async with async_session() as session:
         async with session.begin():
             unfollow = await session.execute(
-                select(Follower).where(Follower.dst_id == follow_id, Follower.src_id == user.id)
+                select(Follower).where(Follower.followed_id == follow_id, Follower.follower_id == user.id)
             )
             unfollow = unfollow.scalar_one_or_none()
 
@@ -235,3 +181,111 @@ async def delete_follow(
             await session.commit()
 
     return {"result": True}
+
+
+@app.post("/api/medias", status_code=201, response_model=MediaResponse)
+async def upload_media(file: UploadFile = File(...), user: User = Depends(check_api_key)):
+    """Сохранения файла и получения его ID"""
+    async with async_session() as session:
+        async with session.begin():
+            media = Media(file=file.filename)
+            session.add(media)
+            await session.flush()
+            media_id = media.id
+
+    return {"result": True, "media_id": media_id}
+
+
+@app.get("/api/tweets", response_model=TweetResponse)
+async def get_user_tweets(user: User = Depends(check_api_key)):
+    """Не работает"""
+    try:
+        async with async_session() as session:
+            async with session.begin():
+                user = await session.execute(select(User).filter(User.id == user.id))
+                user = user.scalar_one_or_none()
+
+                logger.info(f"User found: {user.name}, ID: {user.id}, Tweets: {user.tweets}")
+                print("!!!!!!!!!!!!!!!!!!!!!!Tweets!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", user.tweets)
+
+                if not user:
+                    raise HTTPException(status_code=404, detail="User not found")
+
+                tweets_with_likes = await session.execute(
+                    select(Tweet)
+                    .join(User)
+                    .join(Like, isouter=True)  # Изменение в этой строке
+                    .filter(User.id == user.id)
+                    .options(selectinload(Tweet.user).selectinload(User.likes).selectinload(Like.user))
+                )
+                tweets_with_likes = tweets_with_likes.scalars().all()
+
+                logger.info(f"Tweets with likes: {tweets_with_likes}")
+
+                tweets_response = [
+                    {
+                        "id": tweet.id,
+                        "content": tweet.tweet_data,
+                        "attachments": [str(media_id) for media_id in tweet.tweet_media_ids],
+                        "author": {"id": tweet.user.id, "name": tweet.user.name},
+                        "likes": [
+                            {"user_id": like.user.id, "name": like.user.name}
+                            for like in tweet.likes
+                        ] if tweet.likes is not None else [],  # Check if tweet has likes
+
+                    }
+                    for tweet in tweets_with_likes
+                ]
+
+                logger.info(f"Tweets Response: {tweets_response}")
+
+                return {"result": True, "tweets": tweets_response}
+
+    except HTTPException as e:
+        logger.error(f"HTTPException: {e}")
+        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
+
+    except Exception as e:
+        logger.error(f"Exception: {e}")
+        return {"result": False, "error_type": "Exception", "error_message": str(e)}
+
+
+@app.get("/api/users/me", response_model=UserProfileResponse)
+async def get_user_profile(user: User = Depends(check_api_key)):
+    """Не работает"""
+    try:
+        async with async_session() as session:
+            async with session.begin():
+                user_with_relationships = await session.execute(
+                    select(User)
+                    .filter(User.id == user.id)
+                    .options(
+                        selectinload(User.followers).selectinload(Follower.follower_id),
+                        selectinload(User.following).selectinload(Follower.followed_id),
+                    )
+                )
+                user_with_relationships = user_with_relationships.first()
+
+                response_data = {
+                    "result": True,
+                    "user": {
+                        "id": user.id,
+                        "name": user.name,
+                        "followers": [
+                            {"id": follower.id, "name": follower.name}
+                            for follower in user_with_relationships.followers
+                        ],
+                        "following": [
+                            {"id": following.id, "name": following.name}
+                            for following in user_with_relationships.following
+                        ],
+                    },
+                }
+
+                return response_data
+
+    except HTTPException as e:
+        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
+
+    except Exception as e:
+        return {"result": False, "error_type": "Exception", "error_message": str(e)}

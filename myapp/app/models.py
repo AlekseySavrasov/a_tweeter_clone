@@ -13,14 +13,8 @@ class Tweet(Base):
     tweet_data = Column(String(280), nullable=False)
     tweet_media_ids = Column(ARRAY(Integer))
     user_id = Column(Integer, ForeignKey('users.id'), index=True)
-    user = relationship("User", backref="tweets")
-
-    def __repr__(self):
-        return f"Твит: {self.tweet_data}"
-
-    def to_json(self) -> Dict[str, Any]:
-        return {c.tweet_data: getattr(self, c.tweet_data) for c in
-                self.__table__.columns}
+    user = relationship("User", back_populates="tweets", lazy="joined")
+    likes = relationship("Like", back_populates="tweet", lazy="joined")
 
 
 class User(Base):
@@ -29,13 +23,8 @@ class User(Base):
     id = Column(Integer, Sequence("user_id_seq"), primary_key=True, index=True)
     name = Column(String(50), nullable=False)
     secret_key = Column(String, nullable=False)
-
-    def __repr__(self):
-        return f"Пользователь {self.name}"
-
-    def to_json(self) -> Dict[str, Any]:
-        return {c.name: getattr(self, c.name) for c in
-                self.__table__.columns}
+    tweets = relationship("Tweet", back_populates="user")
+    likes = relationship("Like", back_populates="user")
 
 
 class Media(Base):
@@ -50,15 +39,12 @@ class Like(Base):
 
     id = Column(Integer, Sequence("like_id_seq"), primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey('users.id'), index=True)
-    user = relationship("User", backref="likes")
+    user = relationship("User", back_populates="likes", lazy="joined")
     tweet_id = Column(Integer, ForeignKey('tweets.id'), index=True)
-    tweet = relationship("Tweet", backref="likes")
+    tweet = relationship("Tweet", back_populates="likes", lazy="joined")
 
 
 class Follower(Base):
     __tablename__ = "followers"
-    id = Column(Integer, Sequence("like_id_seq"), primary_key=True, index=True)
-    src_id = Column(Integer, ForeignKey('users.id'), index=True)
-    dst_id = Column(Integer, ForeignKey('users.id'), index=True)
-    src_user = relationship("User", foreign_keys=[src_id])
-    dst_user = relationship("User", foreign_keys=[dst_id])
+    follower_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    followed_id = Column(Integer, ForeignKey("users.id"), primary_key=True)

@@ -5,6 +5,7 @@ services:
     image: nginx:latest
     volumes:
       - ./nginx.conf:/etc/nginx/nginx.conf
+      - ./static:/usr/share/nginx/html
     ports:
       - "8080:80"
     depends_on:
