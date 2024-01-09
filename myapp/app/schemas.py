@@ -28,8 +28,8 @@ class UserDetail(BaseModel):
 
 
 class Like(BaseModel):
-    user_id: Optional[int]
-    name: Optional[str]
+    user_id: int
+    name: str
 
 
 class TweetResponse(BaseModel):
@@ -43,5 +43,5 @@ class TweetResponse(BaseModel):
 class UserProfileResponse(BaseModel):
     result: bool
     user: UserDetail
-    followers: Optional[List[UserDetail]] = []
-    following: Optional[List[UserDetail]] = []
+    followers: Optional[List[UserDetail]] = None
+    following: Optional[List[UserDetail]] = None

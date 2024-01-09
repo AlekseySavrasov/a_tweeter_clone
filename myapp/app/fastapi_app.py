@@ -1,6 +1,8 @@
+import logging
 from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
 from sqlalchemy import select, join
@@ -12,10 +14,17 @@ from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, Tweet
 from sqlalchemy.orm import selectinload, joinedload
 
 app = FastAPI()
+
 static_path = Path(__file__).parent.parent / "static"
-print(static_path)
 app.mount("/static", StaticFiles(directory=static_path), name="static")
-logger.setLevel("INFO")
+
+logger.setLevel(logging.DEBUG)
+file_handler = logging.FileHandler('logfile.log')
+file_handler.setLevel(logging.DEBUG)
+formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+file_handler.setFormatter(formatter)
+logger.addHandler(file_handler)
+
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,7 +50,8 @@ async def startup():
                     User(name="user_1", secret_key="$BSSh6@lfkj"),
                     User(name="user_2", secret_key="kBSkfjSh6@f"),
                     User(name="user_3", secret_key="dBS[pw;olSh"),
-                    Tweet(tweet_data="text", user_id=1)
+                    Tweet(tweet_data="text", user_id=1, tweet_media_ids=[1]),
+                    Tweet(tweet_data="text2", user_id=1)
                 ]
             )
             await session.commit()
@@ -82,6 +92,42 @@ async def check_api_key(api_key: str = Header(...)):
             return user
 
 
+async def get_user_with_relationships(user_id: int = None, user: User = Depends(check_api_key)):
+    try:
+        async with async_session() as session:
+            async with session.begin():
+                query = select(User).filter(User.id == (user_id or user.id)).options(
+                    selectinload(User.followers).selectinload(Follower.follower),
+                    selectinload(User.following).selectinload(Follower.followed),
+                )
+                user_with_relationships = await session.execute(query)
+                return user_with_relationships.scalar()
+
+    except HTTPException as e:
+        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
+
+    except Exception as e:
+        return {"result": False, "error_type": "Exception", "error_message": str(e)}
+
+
+def create_user_response(user_with_relationships: User):
+    return {
+        "result": True,
+        "user": {
+            "id": user_with_relationships.id,
+            "name": user_with_relationships.name,
+            "followers": [
+                {"id": followers.follower.id, "name": followers.follower.name}
+                for followers in user_with_relationships.followers
+            ] if user_with_relationships.followers else None,
+            "following": [
+                {"id": following.followed.id, "name": following.followed.name}
+                for following in user_with_relationships.following
+            ] if user_with_relationships.following else None,
+        },
+    }
+
+
 @app.post("/api/tweets", status_code=201, response_model=TweetOut)
 async def add_tweet(data: TweetIn, user: User = Depends(check_api_key)):
     """Добавление нового твита"""
@@ -103,7 +149,11 @@ async def delete_tweet(tweet_id: int, user: User = Depends(check_api_key)):
     """Удаляем твит по его идентификатору"""
     async with async_session() as session:
         async with session.begin():
-            tweet = await session.execute(select(Tweet).where(Tweet.id == tweet_id))
+            tweet = await session.execute(
+                select(Tweet)
+                .options(selectinload(Tweet.likes))
+                .where(Tweet.id == tweet_id)
+            )
             tweet = tweet.scalar_one_or_none()
 
             if not tweet:
@@ -198,94 +248,49 @@ async def upload_media(file: UploadFile = File(...), user: User = Depends(check_
 
 @app.get("/api/tweets", response_model=TweetResponse)
 async def get_user_tweets(user: User = Depends(check_api_key)):
-    """Не работает"""
     try:
         async with async_session() as session:
             async with session.begin():
-                user = await session.execute(select(User).filter(User.id == user.id))
-                user = user.scalar_one_or_none()
-
-                logger.info(f"User found: {user.name}, ID: {user.id}, Tweets: {user.tweets}")
-                print("!!!!!!!!!!!!!!!!!!!!!!Tweets!!!!!!!!!!!!!!!!!!!!!!!!!!!!!!", user.tweets)
-
-                if not user:
-                    raise HTTPException(status_code=404, detail="User not found")
-
-                tweets_with_likes = await session.execute(
-                    select(Tweet)
-                    .join(User)
-                    .join(Like, isouter=True)  # Изменение в этой строке
+                user_with_tweets = await session.execute(
+                    select(User)
+                    .options(joinedload(User.tweets).joinedload(Tweet.likes).joinedload(Like.user))
                     .filter(User.id == user.id)
-                    .options(selectinload(Tweet.user).selectinload(User.likes).selectinload(Like.user))
                 )
-                tweets_with_likes = tweets_with_likes.scalars().all()
 
-                logger.info(f"Tweets with likes: {tweets_with_likes}")
+                user_with_tweets = user_with_tweets.scalar()
 
-                tweets_response = [
+                tweets_data = [
                     {
                         "id": tweet.id,
                         "content": tweet.tweet_data,
-                        "attachments": [str(media_id) for media_id in tweet.tweet_media_ids],
+                        "attachments": [str(media_id) for media_id in tweet.tweet_media_ids
+                                        ] if tweet.tweet_media_ids else None,
                         "author": {"id": tweet.user.id, "name": tweet.user.name},
                         "likes": [
-                            {"user_id": like.user.id, "name": like.user.name}
+                            {
+                                "user_id": like.user.id,
+                                "name": like.user.name,
+                            }
                             for like in tweet.likes
-                        ] if tweet.likes is not None else [],  # Check if tweet has likes
-
+                        ] if tweet.likes else None,
                     }
-                    for tweet in tweets_with_likes
+                    for tweet in user_with_tweets.tweets
                 ]
 
-                logger.info(f"Tweets Response: {tweets_response}")
-
-                return {"result": True, "tweets": tweets_response}
+                return JSONResponse(content={"result": True, "tweets": tweets_data})
 
     except HTTPException as e:
-        logger.error(f"HTTPException: {e}")
-        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
+        return JSONResponse(content={"result": False, "error_type": "HTTPException", "error_message": str(e)})
 
     except Exception as e:
-        logger.error(f"Exception: {e}")
-        return {"result": False, "error_type": "Exception", "error_message": str(e)}
+        return JSONResponse(content={"result": False, "error_type": "Exception", "error_message": str(e)})
 
 
 @app.get("/api/users/me", response_model=UserProfileResponse)
-async def get_user_profile(user: User = Depends(check_api_key)):
-    """Не работает"""
-    try:
-        async with async_session() as session:
-            async with session.begin():
-                user_with_relationships = await session.execute(
-                    select(User)
-                    .filter(User.id == user.id)
-                    .options(
-                        selectinload(User.followers).selectinload(Follower.follower_id),
-                        selectinload(User.following).selectinload(Follower.followed_id),
-                    )
-                )
-                user_with_relationships = user_with_relationships.first()
+async def get_user_profile(user_with_relationships: User = Depends(get_user_with_relationships)):
+    return JSONResponse(content=create_user_response(user_with_relationships))
 
-                response_data = {
-                    "result": True,
-                    "user": {
-                        "id": user.id,
-                        "name": user.name,
-                        "followers": [
-                            {"id": follower.id, "name": follower.name}
-                            for follower in user_with_relationships.followers
-                        ],
-                        "following": [
-                            {"id": following.id, "name": following.name}
-                            for following in user_with_relationships.following
-                        ],
-                    },
-                }
 
-                return response_data
-
-    except HTTPException as e:
-        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
-
-    except Exception as e:
-        return {"result": False, "error_type": "Exception", "error_message": str(e)}
+@app.get("/api/users/{user_id}", response_model=UserProfileResponse)
+async def get_user_by_id(user_id: int, user_with_relationships: User = Depends(get_user_with_relationships)):
+    return JSONResponse(content=create_user_response(user_with_relationships))
