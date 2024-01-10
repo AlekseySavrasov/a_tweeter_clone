@@ -50,10 +50,16 @@ async def startup():
                     User(name="user_1", secret_key="test"),
                     User(name="user_2", secret_key="kBSkfjSh6@f"),
                     User(name="user_3", secret_key="dBS[pw;olSh"),
-                    Tweet(tweet_data="text", user_id=1, tweet_media_ids=[1]),
-                    Tweet(tweet_data="text2", user_id=1),
+                    Follower(follower_id=3, followed_id=1),
+                    Follower(follower_id=2, followed_id=1),
+                    Follower(follower_id=1, followed_id=2),
+                    Media(file=""),
+                    Tweet(tweet_data="Good day", user_id=1, tweet_media_ids=[1]),
+                    Tweet(tweet_data="Good evening", user_id=1),
+                    Tweet(tweet_data="text_from_user2", user_id=2),
                     Like(user_id=2, tweet_id=1),
-                    Follower(follower_id=3, followed_id=1)
+                    Like(user_id=3, tweet_id=1),
+                    Like(user_id=3, tweet_id=2),
                 ]
             )
             await session.commit()
@@ -243,7 +249,8 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
                 user_with_tweets = await session.execute(
                     select(User)
                     .options(joinedload(User.tweets).joinedload(Tweet.likes).joinedload(Like.user))
-                    .filter(User.id == user.id)
+                    .order_by(Tweet.id.desc())
+                    .limit(100)
                 )
 
                 user_with_tweets = user_with_tweets.scalar()
