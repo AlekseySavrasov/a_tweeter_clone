@@ -47,11 +47,13 @@ async def startup():
         async with session.begin():
             session.add_all(
                 [
-                    User(name="user_1", secret_key="$BSSh6@lfkj"),
+                    User(name="user_1", secret_key="test"),
                     User(name="user_2", secret_key="kBSkfjSh6@f"),
                     User(name="user_3", secret_key="dBS[pw;olSh"),
                     Tweet(tweet_data="text", user_id=1, tweet_media_ids=[1]),
-                    Tweet(tweet_data="text2", user_id=1)
+                    Tweet(tweet_data="text2", user_id=1),
+                    Like(user_id=2, tweet_id=1),
+                    Follower(follower_id=3, followed_id=1)
                 ]
             )
             await session.commit()
@@ -233,19 +235,6 @@ async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
     return {"result": True}
 
 
-@app.post("/api/medias", status_code=201, response_model=MediaResponse)
-async def upload_media(file: UploadFile = File(...), user: User = Depends(check_api_key)):
-    """Сохранения файла и получения его ID"""
-    async with async_session() as session:
-        async with session.begin():
-            media = Media(file=file.filename)
-            session.add(media)
-            await session.flush()
-            media_id = media.id
-
-    return {"result": True, "media_id": media_id}
-
-
 @app.get("/api/tweets", response_model=TweetResponse)
 async def get_user_tweets(user: User = Depends(check_api_key)):
     try:
@@ -294,3 +283,16 @@ async def get_user_profile(user_with_relationships: User = Depends(get_user_with
 @app.get("/api/users/{user_id}", response_model=UserProfileResponse)
 async def get_user_by_id(user_id: int, user_with_relationships: User = Depends(get_user_with_relationships)):
     return JSONResponse(content=create_user_response(user_with_relationships))
+
+
+@app.post("/api/medias", status_code=201, response_model=MediaResponse)
+async def upload_media(file: UploadFile = File(...), user: User = Depends(check_api_key)):
+    """Сохранения файла и получения его ID"""
+    async with async_session() as session:
+        async with session.begin():
+            media = Media(file=file.filename)
+            session.add(media)
+            await session.flush()
+            media_id = media.id
+
+    return {"result": True, "media_id": media_id}
