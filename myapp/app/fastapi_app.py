@@ -1,4 +1,7 @@
 import logging
+import os
+import uuid
+
 from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
@@ -12,6 +15,8 @@ from app.models import Follower, Like, Media, Tweet, User
 from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, TweetResponse, UserDetail, \
     UserProfileResponse
 from sqlalchemy.orm import selectinload, joinedload
+
+UPLOAD_DIR = "static/images"
 
 app = FastAPI()
 
@@ -53,10 +58,12 @@ async def startup():
                     Follower(follower_id=3, followed_id=1),
                     Follower(follower_id=2, followed_id=1),
                     Follower(follower_id=1, followed_id=2),
+                    Follower(follower_id=1, followed_id=3),
+                    Follower(follower_id=1, followed_id=1),
                     Media(file=""),
                     Tweet(tweet_data="Good day", user_id=1, tweet_media_ids=[1]),
                     Tweet(tweet_data="Good evening", user_id=1),
-                    Tweet(tweet_data="text_from_user2", user_id=2),
+                    Tweet(tweet_data="What's up???", user_id=2),
                     Like(user_id=2, tweet_id=1),
                     Like(user_id=3, tweet_id=1),
                     Like(user_id=3, tweet_id=2),
@@ -212,9 +219,6 @@ async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
     """Follow другого пользователя по id"""
     async with async_session() as session:
         async with session.begin():
-            if follow_id == user.id:
-                raise HTTPException(status_code=404, detail="User can't follow himself")
-
             follow = Follower(follower_id=user.id, followed_id=follow_id)
             session.add(follow)
             await session.flush()
@@ -246,21 +250,23 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
     try:
         async with async_session() as session:
             async with session.begin():
-                user_with_tweets = await session.execute(
+                users_with_tweets = await session.execute(
                     select(User)
-                    .options(joinedload(User.tweets).joinedload(Tweet.likes).joinedload(Like.user))
-                    .order_by(Tweet.id.desc())
-                    .limit(100)
+                    .filter(Follower.follower_id == user.id)
+                    .join(Follower, User.id == Follower.followed_id)
+                    .options(
+                        selectinload(User.tweets).selectinload(Tweet.likes).selectinload(Like.user),
+                    )
                 )
 
-                user_with_tweets = user_with_tweets.scalar()
+                users_with_tweets = users_with_tweets.all()
 
                 tweets_data = [
                     {
                         "id": tweet.id,
                         "content": tweet.tweet_data,
-                        "attachments": [str(media_id) for media_id in tweet.tweet_media_ids
-                                        ] if tweet.tweet_media_ids else None,
+                        "attachments": [str(media_id) for media_id in
+                                        tweet.tweet_media_ids] if tweet.tweet_media_ids else None,
                         "author": {"id": tweet.user.id, "name": tweet.user.name},
                         "likes": [
                             {
@@ -270,16 +276,17 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
                             for like in tweet.likes
                         ] if tweet.likes else None,
                     }
-                    for tweet in user_with_tweets.tweets
+                    for user in users_with_tweets
+                    for tweet in user[0].tweets
                 ]
 
                 return JSONResponse(content={"result": True, "tweets": tweets_data})
 
     except HTTPException as e:
-        return JSONResponse(content={"result": False, "error_type": "HTTPException", "error_message": str(e)})
+        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
 
     except Exception as e:
-        return JSONResponse(content={"result": False, "error_type": "Exception", "error_message": str(e)})
+        return {"result": False, "error_type": "Exception", "error_message": str(e)}
 
 
 @app.get("/api/users/me", response_model=UserProfileResponse)
@@ -294,12 +301,24 @@ async def get_user_by_id(user_id: int, user_with_relationships: User = Depends(g
 
 @app.post("/api/medias", status_code=201, response_model=MediaResponse)
 async def upload_media(file: UploadFile = File(...), user: User = Depends(check_api_key)):
-    """Сохранения файла и получения его ID"""
-    async with async_session() as session:
-        async with session.begin():
-            media = Media(file=file.filename)
-            session.add(media)
-            await session.flush()
-            media_id = media.id
+    try:
+        unique_filename = f"{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+        file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-    return {"result": True, "media_id": media_id}
+        with open(file_path, "wb") as file_object:
+            file_object.write(file.file.read())
+
+        async with async_session() as session:
+            async with session.begin():
+                media = Media(file=unique_filename)
+                session.add(media)
+                await session.flush()
+                media_id = media.id if media else None
+
+        return {"result": True, "media_id": media_id}
+
+    except HTTPException as e:
+        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
+
+    except Exception as e:
+        return {"result": False, "error_type": "Exception", "error_message": str(e)}
