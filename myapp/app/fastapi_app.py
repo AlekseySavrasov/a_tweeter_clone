@@ -1,6 +1,6 @@
 import logging
 import os
-import uuid
+from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
 from fastapi.logger import logger
@@ -17,11 +17,12 @@ from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, Tweet
 from sqlalchemy.orm import selectinload, joinedload
 
 UPLOAD_DIR = "static/images"
+ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+STATIC_PATH = Path(__file__).parent.parent / "static"
 
 app = FastAPI()
-
-static_path = Path(__file__).parent.parent / "static"
-app.mount("/static", StaticFiles(directory=static_path), name="static")
+app.config = {"UPLOAD_FOLDER": UPLOAD_DIR}
+app.mount("/static", StaticFiles(directory=STATIC_PATH), name="static")
 
 logger.setLevel(logging.DEBUG)
 file_handler = logging.FileHandler('logfile.log')
@@ -40,57 +41,9 @@ app.add_middleware(
 )
 
 
-@app.on_event("startup")
-async def startup():
-    logger.info("Connecting to the database")
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
-        await conn.run_sync(Base.metadata.create_all)
-
-    async with async_session() as session:
-        async with session.begin():
-            session.add_all(
-                [
-                    User(name="user_1", secret_key="test"),
-                    User(name="user_2", secret_key="kBSkfjSh6@f"),
-                    User(name="user_3", secret_key="dBS[pw;olSh"),
-                    Follower(follower_id=3, followed_id=1),
-                    Follower(follower_id=2, followed_id=1),
-                    Follower(follower_id=1, followed_id=2),
-                    Follower(follower_id=1, followed_id=3),
-                    Follower(follower_id=1, followed_id=1),
-                    Media(file=""),
-                    Tweet(tweet_data="Good day", user_id=1, tweet_media_ids=[1]),
-                    Tweet(tweet_data="Good evening", user_id=1),
-                    Tweet(tweet_data="What's up???", user_id=2),
-                    Like(user_id=2, tweet_id=1),
-                    Like(user_id=3, tweet_id=1),
-                    Like(user_id=3, tweet_id=2),
-                ]
-            )
-            await session.commit()
-
-
-@app.on_event("shutdown")
-async def shutdown_db_client():
-    logger.info("Disconnecting from the database")
-    async with async_session() as session:
-        await session.close()
-        await engine.dispose()
-
-
-@app.middleware("http")
-async def log_requests(request, call_next):
-    logger.info(f"Request received: {request.method} {request.url}")
-    response = await call_next(request)
-    logger.info(f"Response sent: {response.status_code}")
-    return response
-
-
-@app.get("/hello")
-async def main():
-    return {"Hello, World!"}
+def allowed_file(filename):
+    return '.' in filename and \
+           filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
 
 async def check_api_key(api_key: str = Header(...)):
@@ -134,29 +87,89 @@ def create_user_response(user_with_relationships: User):
             "followers": [
                 {"id": followers.follower.id, "name": followers.follower.name}
                 for followers in user_with_relationships.followers
-            ] if user_with_relationships.followers else None,
+            ] if user_with_relationships.followers else [],
             "following": [
                 {"id": following.followed.id, "name": following.followed.name}
                 for following in user_with_relationships.following
-            ] if user_with_relationships.following else None,
+            ] if user_with_relationships.following else [],
         },
     }
+
+
+@app.on_event("startup")
+async def startup():
+    logger.info("Connecting to the database")
+
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+        await conn.run_sync(Base.metadata.create_all)
+
+    async with async_session() as session:
+        async with session.begin():
+            session.add_all(
+                [
+                    User(name="user_1", secret_key="test"),
+                    User(name="user_2", secret_key="kBSkfjSh6@f"),
+                    User(name="user_3", secret_key="dBS[pw;olSh"),
+                    Follower(follower_id=3, followed_id=1),
+                    Follower(follower_id=2, followed_id=1),
+                    Follower(follower_id=1, followed_id=2),
+                    Follower(follower_id=1, followed_id=3),
+                    Follower(follower_id=1, followed_id=1),
+                    Tweet(tweet_data="Good day ^_^", user_id=1),
+                    Tweet(tweet_data="Good evening :)", user_id=1),
+                    Tweet(tweet_data="What's up???", user_id=2),
+                    Tweet(tweet_data="the message has been deleted by admin ;-p", user_id=3),
+                    Like(user_id=2, tweet_id=1),
+                    Like(user_id=3, tweet_id=1),
+                    Like(user_id=3, tweet_id=2),
+                ]
+            )
+            await session.commit()
+
+
+@app.on_event("shutdown")
+async def shutdown_db_client():
+    logger.info("Disconnecting from the database")
+    async with async_session() as session:
+        await session.close()
+        await engine.dispose()
+
+
+@app.middleware("http")
+async def log_requests(request, call_next):
+    logger.info(f"Request received: {request.method} {request.url}")
+    response = await call_next(request)
+    logger.info(f"Response sent: {response.status_code}")
+    return response
+
+
+@app.get("/hello")
+async def main():
+    return {"Hello, World!"}
 
 
 @app.post("/api/tweets", status_code=201, response_model=TweetOut)
 async def add_tweet(data: TweetIn, user: User = Depends(check_api_key)):
     """Добавление нового твита"""
-    async with async_session() as session:
-        async with session.begin():
-            tweet = Tweet(
-                tweet_data=data.tweet_data,
-                tweet_media_ids=data.tweet_media_ids,
-                user_id=user.id
-            )
-            session.add(tweet)
-            await session.flush()
+    try:
+        if not data:
+            raise HTTPException(status_code=400, detail="Invalid tweet data")
 
-    return {"result": True, "id": tweet.id}
+        tweet = Tweet(tweet_data=data.tweet_data, tweet_media_ids=data.tweet_media_ids, user_id=user.id)
+
+        async with async_session() as session:
+            async with session.begin():
+                session.add(tweet)
+                await session.flush()
+                tweet_id = tweet.id if tweet else None
+
+        return JSONResponse(content={"result": True, "tweet_id": tweet_id})
+
+    except HTTPException as e:
+        raise e
+    except Exception as e:
+        return JSONResponse(content={"result": False, "detail": str(e)}, status_code=500)
 
 
 @app.delete("/api/tweets/{tweet_id}", status_code=202, response_model=OperationResult)
@@ -265,8 +278,8 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
                     {
                         "id": tweet.id,
                         "content": tweet.tweet_data,
-                        "attachments": [str(media_id) for media_id in
-                                        tweet.tweet_media_ids] if tweet.tweet_media_ids else None,
+                        "attachments": [media_id for media_id in
+                                        tweet.tweet_media_ids] if tweet.tweet_media_ids else [],
                         "author": {"id": tweet.user.id, "name": tweet.user.name},
                         "likes": [
                             {
@@ -274,7 +287,7 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
                                 "name": like.user.name,
                             }
                             for like in tweet.likes
-                        ] if tweet.likes else None,
+                        ] if tweet.likes else [],
                     }
                     for user in users_with_tweets
                     for tweet in user[0].tweets
@@ -283,10 +296,10 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
                 return JSONResponse(content={"result": True, "tweets": tweets_data})
 
     except HTTPException as e:
-        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
+        return JSONResponse(content={"result": False, "error_type": "HTTPException", "error_message": str(e)})
 
     except Exception as e:
-        return {"result": False, "error_type": "Exception", "error_message": str(e)}
+        return JSONResponse(content={"result": False, "error_type": "Exception", "error_message": str(e)})
 
 
 @app.get("/api/users/me", response_model=UserProfileResponse)
@@ -302,7 +315,10 @@ async def get_user_by_id(user_id: int, user_with_relationships: User = Depends(g
 @app.post("/api/medias", status_code=201, response_model=MediaResponse)
 async def upload_media(file: UploadFile = File(...), user: User = Depends(check_api_key)):
     try:
-        unique_filename = f"{uuid.uuid4()}{os.path.splitext(file.filename)[1]}"
+        if not allowed_file(file.filename):
+            raise HTTPException(status_code=400, detail="Invalid file type")
+
+        unique_filename = f"{uuid4()}{os.path.splitext(file.filename)[1]}"
         file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
         with open(file_path, "wb") as file_object:
@@ -313,12 +329,12 @@ async def upload_media(file: UploadFile = File(...), user: User = Depends(check_
                 media = Media(file=unique_filename)
                 session.add(media)
                 await session.flush()
-                media_id = media.id if media else None
+                media_id = media.id if media else []
 
-        return {"result": True, "media_id": media_id}
+        return JSONResponse(content={"result": True, "media_id": media_id})
 
     except HTTPException as e:
-        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
+        return JSONResponse(content={"result": False, "error_type": "HTTPException", "error_message": str(e)})
 
     except Exception as e:
-        return {"result": False, "error_type": "Exception", "error_message": str(e)}
+        return JSONResponse(content={"result": False, "error_type": "Exception", "error_message": str(e)})
