@@ -365,7 +365,7 @@ async def upload_media(file: UploadFile = File(...), user: User = Depends(check_
 
         async with async_session() as session:
             async with session.begin():
-                media = Media(file_name=unique_filename)
+                media = Media(file_name=f"/static/images/{unique_filename}")
                 session.add(media)
                 await session.flush()
 
