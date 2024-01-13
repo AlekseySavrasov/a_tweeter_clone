@@ -62,4 +62,4 @@ class Media(Base):
     __tablename__ = "medias"
 
     id = Column(Integer, Sequence("media_id_seq"), primary_key=True, index=True)
-    file = Column(String)  # возможно изменение типа колонки на LargeBinary
+    file_name = Column(String)

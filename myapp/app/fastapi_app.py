@@ -17,7 +17,7 @@ from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, Tweet
 from sqlalchemy.orm import selectinload, joinedload
 
 UPLOAD_DIR = "static/images"
-ALLOWED_EXTENSIONS = {'txt', 'pdf', 'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 STATIC_PATH = Path(__file__).parent.parent / "static"
 
 app = FastAPI()
@@ -258,6 +258,32 @@ async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
     return {"result": True}
 
 
+async def load_name_images(users_with_tweets, user: User = Depends(check_api_key)):
+    try:
+        async with async_session() as session:
+            async with session.begin():
+                print("user_with_tweets", users_with_tweets)
+
+                all_media_ids = [
+                    media_id
+                    for user in users_with_tweets
+                    for tweet in user[0].tweets
+                    for media_id in tweet.tweet_media_ids
+                ] if users_with_tweets else []
+
+                media_data = await session.execute(select(Media).where(Media.id.in_(all_media_ids)))
+
+                media_dict = {media.id: media.filename for media in media_data.scalars()}
+
+                return media_dict
+
+    except HTTPException as e:
+        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
+
+    except Exception as e:
+        return {"result": False, "error_type": "Exception", "error_message": str(e)}
+
+
 @app.get("/api/tweets", response_model=TweetResponse)
 async def get_user_tweets(user: User = Depends(check_api_key)):
     try:
@@ -271,14 +297,27 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
                         selectinload(User.tweets).selectinload(Tweet.likes).selectinload(Like.user),
                     )
                 )
-
                 users_with_tweets = users_with_tweets.all()
+
+                media_data = await session.execute(select(Media))
+                media_data = media_data.all()
+                media_dict = {media[0].id: media[0].file_name for media in media_data}
+
+                # all_media_ids = [
+                #     media_id
+                #     for user in users_with_tweets
+                #     for tweet in user[0].tweets
+                #     for media_id in tweet.tweet_media_ids
+                # ] if users_with_tweets else []
+                #
+                # media_data = await session.query(select(Media).where(Media.id.in_(all_media_ids)))
+                # media_dict = {media[0].id: media[0].file_name for media in media_data.all()}
 
                 tweets_data = [
                     {
                         "id": tweet.id,
                         "content": tweet.tweet_data,
-                        "attachments": [media_id for media_id in
+                        "attachments": [media_dict.get(media_id, None) for media_id in
                                         tweet.tweet_media_ids] if tweet.tweet_media_ids else [],
                         "author": {"id": tweet.user.id, "name": tweet.user.name},
                         "likes": [
@@ -308,7 +347,7 @@ async def get_user_profile(user_with_relationships: User = Depends(get_user_with
 
 
 @app.get("/api/users/{user_id}", response_model=UserProfileResponse)
-async def get_user_by_id(user_id: int, user_with_relationships: User = Depends(get_user_with_relationships)):
+async def get_user_by_id(user_with_relationships: User = Depends(get_user_with_relationships)):
     return JSONResponse(content=create_user_response(user_with_relationships))
 
 
@@ -326,12 +365,11 @@ async def upload_media(file: UploadFile = File(...), user: User = Depends(check_
 
         async with async_session() as session:
             async with session.begin():
-                media = Media(file=unique_filename)
+                media = Media(file_name=unique_filename)
                 session.add(media)
                 await session.flush()
-                media_id = media.id if media else []
 
-        return JSONResponse(content={"result": True, "media_id": media_id})
+        return JSONResponse(content={"result": True, "media_id": media.id})
 
     except HTTPException as e:
         return JSONResponse(content={"result": False, "error_type": "HTTPException", "error_message": str(e)})

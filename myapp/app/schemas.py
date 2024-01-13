@@ -35,7 +35,7 @@ class Like(BaseModel):
 class TweetResponse(BaseModel):
     id: Optional[int] = None
     content: Optional[str] = None
-    attachments: Optional[List[int]] = []
+    attachments: Optional[List[str]] = []
     author: Optional[UserDetail] = None
     likes: Optional[List[Like]] = []
 
