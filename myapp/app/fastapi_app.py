@@ -8,13 +8,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pathlib import Path
-from sqlalchemy import select, join
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 
 from app.database import Base, engine, async_session
 from app.models import Follower, Like, Media, Tweet, User
 from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, TweetResponse, UserDetail, \
     UserProfileResponse
-from sqlalchemy.orm import selectinload, joinedload
+
 
 UPLOAD_DIR = "static/images"
 ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
@@ -258,32 +259,6 @@ async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
     return {"result": True}
 
 
-async def load_name_images(users_with_tweets, user: User = Depends(check_api_key)):
-    try:
-        async with async_session() as session:
-            async with session.begin():
-                print("user_with_tweets", users_with_tweets)
-
-                all_media_ids = [
-                    media_id
-                    for user in users_with_tweets
-                    for tweet in user[0].tweets
-                    for media_id in tweet.tweet_media_ids
-                ] if users_with_tweets else []
-
-                media_data = await session.execute(select(Media).where(Media.id.in_(all_media_ids)))
-
-                media_dict = {media.id: media.filename for media in media_data.scalars()}
-
-                return media_dict
-
-    except HTTPException as e:
-        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
-
-    except Exception as e:
-        return {"result": False, "error_type": "Exception", "error_message": str(e)}
-
-
 @app.get("/api/tweets", response_model=TweetResponse)
 async def get_user_tweets(user: User = Depends(check_api_key)):
     try:
@@ -302,16 +277,6 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
                 media_data = await session.execute(select(Media))
                 media_data = media_data.all()
                 media_dict = {media[0].id: media[0].file_name for media in media_data}
-
-                # all_media_ids = [
-                #     media_id
-                #     for user in users_with_tweets
-                #     for tweet in user[0].tweets
-                #     for media_id in tweet.tweet_media_ids
-                # ] if users_with_tweets else []
-                #
-                # media_data = await session.query(select(Media).where(Media.id.in_(all_media_ids)))
-                # media_dict = {media[0].id: media[0].file_name for media in media_data.all()}
 
                 tweets_data = [
                     {
@@ -365,7 +330,7 @@ async def upload_media(file: UploadFile = File(...), user: User = Depends(check_
 
         async with async_session() as session:
             async with session.begin():
-                media = Media(file_name=unique_filename)
+                media = Media(file_name=f"static/images/{unique_filename}")
                 session.add(media)
                 await session.flush()
 
