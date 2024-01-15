@@ -1,20 +1,19 @@
 import logging
 import os
-from uuid import uuid4
 
 from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
+from uuid import uuid4
 from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.database import Base, engine, async_session
 from app.models import Follower, Like, Media, Tweet, User
-from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, TweetResponse, UserDetail, \
-    UserProfileResponse
+from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, TweetResponse, UserProfileResponse
 
 
 UPLOAD_DIR = "static/images"
@@ -47,6 +46,24 @@ def allowed_file(filename):
            filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
 
+def create_user_response(user_with_relationships: User):
+    return {
+        "result": True,
+        "user": {
+            "id": user_with_relationships.id,
+            "name": user_with_relationships.name,
+            "followers": [
+                {"id": followers.follower.id, "name": followers.follower.name}
+                for followers in user_with_relationships.followers
+            ] if user_with_relationships.followers else [],
+            "following": [
+                {"id": following.followed.id, "name": following.followed.name}
+                for following in user_with_relationships.following
+            ] if user_with_relationships.following else [],
+        },
+    }
+
+
 async def check_api_key(api_key: str = Header(...)):
     """Проверка API-ключа"""
     async with async_session() as session:
@@ -77,24 +94,6 @@ async def get_user_with_relationships(user_id: int = None, user: User = Depends(
 
     except Exception as e:
         return {"result": False, "error_type": "Exception", "error_message": str(e)}
-
-
-def create_user_response(user_with_relationships: User):
-    return {
-        "result": True,
-        "user": {
-            "id": user_with_relationships.id,
-            "name": user_with_relationships.name,
-            "followers": [
-                {"id": followers.follower.id, "name": followers.follower.name}
-                for followers in user_with_relationships.followers
-            ] if user_with_relationships.followers else [],
-            "following": [
-                {"id": following.followed.id, "name": following.followed.name}
-                for following in user_with_relationships.following
-            ] if user_with_relationships.following else [],
-        },
-    }
 
 
 @app.on_event("startup")

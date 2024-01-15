@@ -1,9 +1,7 @@
-from typing import Dict, Any
-
 from sqlalchemy import Column, String, Integer, Sequence, ARRAY, ForeignKey, LargeBinary
+from sqlalchemy.orm import relationship
 
 from app.database import Base
-from sqlalchemy.orm import relationship
 
 
 class Like(Base):
