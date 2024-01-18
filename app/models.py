@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Integer, Sequence, ARRAY, ForeignKey, LargeBinary
+from sqlalchemy import Column, String, Integer, Sequence, ARRAY, ForeignKey
 from sqlalchemy.orm import relationship
 
 from app.database import Base
