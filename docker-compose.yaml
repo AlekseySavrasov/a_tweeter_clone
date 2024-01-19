@@ -9,31 +9,76 @@ services:
     ports:
       - "8888:80"
     depends_on:
-      - app
+      - app_prod
+      - app_dev
     networks:
       - mynetwork
 
-  app:
-    build: .
+  app_prod:
+    build:
+      context: .
+      target: production
     command: uvicorn app.fastapi_app:create_app --host 0.0.0.0 --port 8000
     ports:
       - "8000:8000"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER}:${DB_PASS}@postgres:5432/postgres
     networks:
       - mynetwork
     depends_on:
       - postgres
 
+  app_dev:
+    build:
+      context: .
+      target: development
+    command: uvicorn app.fastapi_app:create_app --host 0.0.0.0 --port 8001
+    ports:
+      - "8001:8001"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://${DB_USER_TEST}:${DB_PASS_TEST}@postgres_test:5432/postgres
+    networks:
+      - mynetwork
+    depends_on:
+      - postgres_test
+
+
   postgres:
     image: postgres
+    env_file:
+      - .env
     environment:
-      - POSTGRES_USER=admin
-      - POSTGRES_PASSWORD=admin
+      - POSTGRES_USER=${DB_USER}
+      - POSTGRES_PASSWORD=${DB_PASS}
     ports:
       - "5432:5432"
     volumes:
-      - /database/db/:/var/lib/postgresql/data
+      - pg_real_data:/var/lib/postgresql/data
+      - pg_real_logs:/var/log/postgresql
     networks:
       - mynetwork
+
+
+  postgres_test:
+    image: postgres
+    env_file:
+      - .env
+    environment:
+      - POSTGRES_USER=${DB_USER_TEST}
+      - POSTGRES_PASSWORD=${DB_PASS_TEST}
+    volumes:
+      - pg_test_data:/var/lib/postgresql/data
+      - pg_test_logs:/var/log/postgresql
+    ports:
+      - "5433:5432"
+    networks:
+      - mynetwork
+
+volumes:
+  pg_real_data:
+  pg_real_logs:
+  pg_test_data:
+  pg_test_logs:
 
 networks:
   mynetwork:

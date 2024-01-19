@@ -1,6 +1,5 @@
 import logging
 import os
-from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, Header, HTTPException, Depends, UploadFile, File
 from fastapi.logger import logger
@@ -98,8 +97,8 @@ def create_app():
         logger.info("Connecting to the database")
 
         async with engine.begin() as conn:
-            await conn.run_sync(Base.metadata.drop_all)
-            await conn.run_sync(Base.metadata.create_all)
+            await conn.run_sync(metadata.drop_all)
+            await conn.run_sync(metadata.create_all)
 
         async with async_session() as session:
             async with session.begin():
