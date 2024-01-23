@@ -1,3 +1,5 @@
+from typing import Dict, Any
+
 from sqlalchemy import Column, String, Integer, Sequence, ARRAY, ForeignKey
 from sqlalchemy.orm import relationship
 
@@ -26,6 +28,13 @@ class Tweet(Base):
     user = relationship("User", back_populates="tweets", lazy="select")
     likes = relationship("Like", back_populates="tweet", lazy="joined", cascade="all, delete-orphan")
 
+    def __repr__(self):
+        return f"Tweet: {self.tweet_data}"
+
+    def to_json(self) -> Dict[str, Any]:
+        return {c.name: getattr(self, c.name) for c in
+                self.__table__.columns}
+
 
 class User(Base):
     __tablename__ = "users"
@@ -48,6 +57,13 @@ class User(Base):
         back_populates="follower",
         lazy="selectin",
     )
+
+    def __repr__(self):
+        return f"User: {self.name}"
+
+    def to_json(self) -> Dict[str, Any]:
+        return {c.name: getattr(self, c.name) for c in
+                self.__table__.columns}
 
 
 class Follower(Base):

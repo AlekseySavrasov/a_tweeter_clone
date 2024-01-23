@@ -1,29 +1,36 @@
 import asyncio
-import os
-from typing import Generator, AsyncGenerator
+from typing import AsyncGenerator, MutableMapping, Any
 
-import pytest
+import pytest_asyncio
 from httpx import AsyncClient
-from fastapi import FastAPI, Depends
-from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy.orm import Session
+from asgi_lifespan import LifespanManager
 
-from app.models import User, Follower, Tweet, Like
-from app.database import async_session, Base, engine
+
+from app.database import engine, metadata
 from app.fastapi_app import create_app
 
 
-@pytest.fixture(autouse=True, scope="session")
-async def prepare_db():
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all(bind=engine))
-    yield
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
+@pytest_asyncio.fixture(scope="function")
+async def app() -> MutableMapping[str, Any]:
+    loop = asyncio.get_running_loop()
+    app = create_app()
+    yield app
 
 
-@pytest.fixture(scope="session")
-async def client():
-    async with AsyncClient(app=create_app(), base_url="http://test") as ac:
-        yield ac
+@pytest_asyncio.fixture(autouse=True, scope="function")
+async def prepare_db(app):
+    loop = asyncio.get_running_loop()
+    async with LifespanManager(app):
+        async with engine.begin() as conn:
+            await conn.run_sync(metadata.create_all)
+        yield
+        async with engine.begin() as conn:
+            await conn.run_sync(metadata.drop_all)
+
+
+@pytest_asyncio.fixture(scope="function")
+async def client(app):
+    async with LifespanManager(app):
+        async with AsyncClient(app=app, base_url="http://test") as client:
+            yield client
 
