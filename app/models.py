@@ -16,6 +16,10 @@ class Like(Base):
     user = relationship("User", back_populates="likes", lazy="select")
     tweet = relationship("Tweet", back_populates="likes", lazy="select")
 
+    def to_json(self) -> Dict[str, Any]:
+        return {c.name: getattr(self, c.name) for c in
+                self.__table__.columns}
+
 
 class Tweet(Base):
     __tablename__ = "tweets"

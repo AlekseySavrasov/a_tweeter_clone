@@ -1,5 +1,6 @@
 import asyncio
-from typing import AsyncGenerator, MutableMapping, Any
+import os
+from typing import MutableMapping, Any
 
 import pytest_asyncio
 from httpx import AsyncClient
@@ -7,7 +8,7 @@ from asgi_lifespan import LifespanManager
 
 
 from app.database import engine, metadata
-from app.fastapi_app import create_app
+from app.fastapi_app import create_app, UPLOAD_DIR
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -34,3 +35,12 @@ async def client(app):
         async with AsyncClient(app=app, base_url="http://test") as client:
             yield client
 
+
+@pytest_asyncio.fixture(scope="function")
+def cleanup_uploaded_files():
+    yield
+    uploaded_files = os.listdir(UPLOAD_DIR)
+
+    for file_name in uploaded_files:
+        if file_name.startswith("test_file"):
+            os.remove(os.path.join(UPLOAD_DIR, file_name))

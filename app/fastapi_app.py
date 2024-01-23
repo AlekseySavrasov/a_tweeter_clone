@@ -11,7 +11,7 @@ from pathlib import Path
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.database import Base, engine, async_session, metadata
+from app.database import engine, async_session, metadata
 from app.models import Follower, Like, Media, Tweet, User
 from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, TweetResponse, UserProfileResponse
 
@@ -105,8 +105,8 @@ def create_app():
                 session.add_all(
                     [
                         User(name="user_1", secret_key="test"),
-                        User(name="user_2", secret_key="kBSkfjSh6@f"),
-                        User(name="user_3", secret_key="dBS[pw;olSh"),
+                        User(name="user_2", secret_key="test_2"),
+                        User(name="user_3", secret_key="test_3"),
                         Follower(follower_id=3, followed_id=1),
                         Follower(follower_id=1, followed_id=2),
                         Follower(follower_id=1, followed_id=3),
