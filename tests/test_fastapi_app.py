@@ -21,7 +21,7 @@ async def test_add_tweet(client: AsyncClient):
     }
 
     response = await client.post("/api/tweets", headers={"api-key": "test"}, json=tweet_data)
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert response.json() == {"result": True, "tweet_id": 4}
 
     async with async_session() as session:
@@ -52,17 +52,17 @@ async def test_add_like(client: AsyncClient):
     assert response.json() == {"result": True}
 
     async with async_session() as session:
-        result = await session.execute(select(Like).where(Like.id == 4))
+        result = await session.execute(select(Like).where(Like.id == 5))
         new_like = result.scalar()
         assert new_like.to_json() == {
-            "id": 4,
+            "id": 5,
             "user_id": 1,
             "tweet_id": 1,
         }
 
 
 async def test_delete_like(client: AsyncClient):
-    response = await client.delete(f"/api/tweets/{2}/likes", headers={"api-key": "test_3"})
+    response = await client.delete(f"/api/tweets/{1}/likes", headers={"api-key": "test_3"})
     assert response.status_code == 202
     assert response.json() == {"result": True}
 
@@ -139,7 +139,7 @@ async def test_get_user_by_id(client: AsyncClient):
 async def test_upload_media(client: AsyncClient, cleanup_uploaded_files):
     files = {"file": ("test_file.jpg", b"Hello, this is a test file!")}
     response = await client.post("/api/medias", headers={"api-key": "test"}, files=files)
-    assert response.status_code == 200
+    assert response.status_code == 201
     assert response.json() == {"result": True, "media_id": 1}
 
     async with async_session() as session:

@@ -33,6 +33,10 @@ def create_app():
     app.config = {"UPLOAD_FOLDER": UPLOAD_DIR}
     app.mount("/static", StaticFiles(directory=STATIC_PATH), name="static")
 
+    class CustomException(HTTPException):
+        def __init__(self, status_code: int, detail: str):
+            super().__init__(status_code=status_code, detail=detail)
+
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
@@ -72,7 +76,7 @@ def create_app():
                 user = user.scalar_one_or_none()
 
                 if not user:
-                    raise HTTPException(status_code=401, detail="Invalid API Key")
+                    raise CustomException(status_code=401, detail="Invalid API Key")
                 return user
 
     async def get_user_with_relationships(user_id: int = None, user: User = Depends(check_api_key)):
@@ -88,9 +92,6 @@ def create_app():
 
         except HTTPException as e:
             return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
-
-        except Exception as e:
-            return {"result": False, "error_type": "Exception", "error_message": str(e)}
 
     @app.on_event("startup")
     async def startup():
@@ -110,11 +111,11 @@ def create_app():
                         Follower(follower_id=3, followed_id=1),
                         Follower(follower_id=1, followed_id=2),
                         Follower(follower_id=1, followed_id=3),
-                        Follower(follower_id=1, followed_id=1),
                         Tweet(tweet_data="Good day ^_^", user_id=1),
                         Tweet(tweet_data="What's up???", user_id=2),
-                        Tweet(tweet_data="the message has been deleted by admin ;-p", user_id=3),
+                        Tweet(tweet_data="the message has been deleted by admin", user_id=3),
                         Like(user_id=2, tweet_id=1),
+                        Like(user_id=1, tweet_id=2),
                         Like(user_id=3, tweet_id=1),
                         Like(user_id=3, tweet_id=2),
                     ]
@@ -142,24 +143,18 @@ def create_app():
     @app.post("/api/tweets", status_code=201, response_model=TweetOut)
     async def add_tweet(data: TweetIn, user: User = Depends(check_api_key)):
         """Добавление нового твита"""
-        try:
-            if not data:
-                raise HTTPException(status_code=400, detail="Invalid tweet data")
+        if not data:
+            raise CustomException(status_code=400, detail="Invalid tweet data")
 
-            tweet = Tweet(tweet_data=data.tweet_data, tweet_media_ids=data.tweet_media_ids, user_id=user.id)
+        tweet = Tweet(tweet_data=data.tweet_data, tweet_media_ids=data.tweet_media_ids, user_id=user.id)
 
-            async with async_session() as session:
-                async with session.begin():
-                    session.add(tweet)
-                    await session.flush()
-                    tweet_id = tweet.id if tweet else None
+        async with async_session() as session:
+            async with session.begin():
+                session.add(tweet)
+                await session.flush()
+                tweet_id = tweet.id if tweet else None
 
-            return JSONResponse(content={"result": True, "tweet_id": tweet_id})
-
-        except HTTPException as e:
-            raise e
-        except Exception as e:
-            return JSONResponse(content={"result": False, "detail": str(e)}, status_code=500)
+        return JSONResponse(content={"result": True, "tweet_id": tweet_id}, status_code=201)
 
     @app.delete("/api/tweets/{tweet_id}", status_code=202, response_model=OperationResult)
     async def delete_tweet(tweet_id: int, user: User = Depends(check_api_key)):
@@ -174,10 +169,9 @@ def create_app():
                 tweet = tweet.scalar_one_or_none()
 
                 if not tweet:
-                    raise HTTPException(status_code=404, detail="Tweet not found")
-
-                if tweet.user_id != user.id:
-                    raise HTTPException(status_code=403, detail="You are not allowed to delete this tweet")
+                    raise CustomException(status_code=404, detail="Tweet not found")
+                elif tweet.user_id != user.id:
+                    raise CustomException(status_code=403, detail="You are not allowed to delete this tweet")
 
                 await session.delete(tweet)
                 await session.commit()
@@ -189,6 +183,24 @@ def create_app():
         """Установление лайка на твит по id"""
         async with async_session() as session:
             async with session.begin():
+                tweet = await session.execute(
+                    select(Tweet)
+                    .options(selectinload(Tweet.likes))
+                    .where(Tweet.id == tweet_id)
+                )
+                tweet = tweet.scalar_one_or_none()
+
+                if not tweet:
+                    raise CustomException(status_code=404, detail="Tweet not found")
+
+                like = await session.execute(
+                    select(Like).where(Like.tweet_id == tweet_id, Like.user_id == user.id)
+                )
+                like = like.scalar_one_or_none()
+
+                if like:
+                    raise CustomException(status_code=400, detail="Like already exists!")
+
                 like = Like(tweet_id=tweet_id, user_id=user.id)
                 session.add(like)
                 await session.flush()
@@ -206,7 +218,7 @@ def create_app():
                 unlike = unlike.scalar_one_or_none()
 
                 if not unlike:
-                    raise HTTPException(status_code=404, detail="Like not found")
+                    raise CustomException(status_code=404, detail="Like not found")
 
                 await session.delete(unlike)
                 await session.commit()
@@ -216,8 +228,25 @@ def create_app():
     @app.post("/api/users/{follow_id}/follow", status_code=201, response_model=OperationResult)
     async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
         """Follow другого пользователя по id"""
+        if follow_id == user.id:
+            raise CustomException(status_code=400, detail="The current user can't follow himself")
+
         async with async_session() as session:
             async with session.begin():
+                follow_user = await session.execute(select(User).where(User.id == follow_id))
+                follow_user = follow_user.scalar_one_or_none()
+
+                if not follow_user:
+                    raise CustomException(status_code=404, detail="User not found")
+
+                follow = await session.execute(
+                    select(Follower).where(Follower.followed_id == follow_id, Follower.follower_id == user.id)
+                )
+                follow = follow.scalar_one_or_none()
+
+                if follow:
+                    raise CustomException(status_code=400, detail="Follow already exists!")
+
                 follow = Follower(follower_id=user.id, followed_id=follow_id)
                 session.add(follow)
                 await session.flush()
@@ -235,7 +264,7 @@ def create_app():
                 unfollow = unfollow.scalar_one_or_none()
 
                 if not unfollow:
-                    raise HTTPException(status_code=404, detail="Follow not found")
+                    raise CustomException(status_code=404, detail="Follow not found")
 
                 await session.delete(unfollow)
                 await session.commit()
@@ -285,9 +314,6 @@ def create_app():
         except HTTPException as e:
             return JSONResponse(content={"result": False, "error_type": "HTTPException", "error_message": str(e)})
 
-        except Exception as e:
-            return JSONResponse(content={"result": False, "error_type": "Exception", "error_message": str(e)})
-
     @app.get("/api/users/me", response_model=UserProfileResponse)
     async def get_user_profile(user_with_relationships: User = Depends(get_user_with_relationships)):
         return JSONResponse(content=create_user_response(user_with_relationships))
@@ -298,30 +324,23 @@ def create_app():
 
     @app.post("/api/medias", status_code=201, response_model=MediaResponse)
     async def upload_media(file: UploadFile = File(...), user: User = Depends(check_api_key)):
-        try:
-            if not allowed_file(file.filename):
-                raise HTTPException(status_code=400, detail="Invalid file type")
+        if not allowed_file(file.filename):
+            raise CustomException(status_code=400, detail="Invalid file type")
 
-            unique_filename = f"{uuid4()}{os.path.splitext(file.filename)[1]}"
-            file_path = os.path.join(UPLOAD_DIR, unique_filename)
+        unique_filename = f"{uuid4()}{os.path.splitext(file.filename)[1]}"
+        file_path = os.path.join(UPLOAD_DIR, unique_filename)
 
-            with open(file_path, "wb") as file_object:
-                file_object.write(file.file.read())
+        with open(file_path, "wb") as file_object:
+            file_object.write(file.file.read())
 
-            async with async_session() as session:
-                async with session.begin():
+        async with async_session() as session:
+            async with session.begin():
 
-                    media = Media(file_name=f"/static/images/{unique_filename}")
+                media = Media(file_name=f"/static/images/{unique_filename}")
 
-                    session.add(media)
-                    await session.flush()
+                session.add(media)
+                await session.flush()
 
-            return JSONResponse(content={"result": True, "media_id": media.id})
-
-        except HTTPException as e:
-            return JSONResponse(content={"result": False, "error_type": "HTTPException", "error_message": str(e)})
-
-        except Exception as e:
-            return JSONResponse(content={"result": False, "error_type": "Exception", "error_message": str(e)})
+        return JSONResponse(content={"result": True, "media_id": media.id}, status_code=201)
 
     return app
