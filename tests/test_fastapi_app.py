@@ -61,6 +61,18 @@ async def test_add_like(client: AsyncClient):
         }
 
 
+async def test_add_like_with_null_tweet(client: AsyncClient):
+    response = await client.post(f"/api/tweets/{10}/likes", headers={"api-key": "test"})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "Tweet not found"}
+
+
+async def test_add_like_which_exists(client: AsyncClient):
+    response = await client.post(f"/api/tweets/{2}/likes", headers={"api-key": "test"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Like already exists!"}
+
+
 async def test_delete_like(client: AsyncClient):
     response = await client.delete(f"/api/tweets/{1}/likes", headers={"api-key": "test_3"})
     assert response.status_code == 202
@@ -83,6 +95,24 @@ async def test_add_follow(client: AsyncClient):
         )
         new_follow = result.scalar()
         assert new_follow is not None
+
+
+async def test_add_follow_which_exist(client: AsyncClient):
+    response = await client.post(f"/api/users/{2}/follow", headers={"api-key": "test"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Follow already exists!"}
+
+
+async def test_add_follow_yourself(client: AsyncClient):
+    response = await client.post(f"/api/users/{1}/follow", headers={"api-key": "test"})
+    assert response.status_code == 400
+    assert response.json() == {"detail": "The current user can't follow himself"}
+
+
+async def test_add_follow_null_user(client: AsyncClient):
+    response = await client.post(f"/api/users/{10}/follow", headers={"api-key": "test"})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "User not found"}
 
 
 async def test_delete_follow(client: AsyncClient):
@@ -147,3 +177,11 @@ async def test_upload_media(client: AsyncClient, cleanup_uploaded_files):
         media = media.scalar_one()
         assert media is not None
         assert media.file_name.startswith("/static/images/")
+
+
+async def test_upload_wrong_media(client: AsyncClient, cleanup_uploaded_files):
+    files = {"file": ("test_file.txt", b"Hello, this is a test file!")}
+    response = await client.post("/api/medias", headers={"api-key": "test"}, files=files)
+    assert response.status_code == 400
+    assert response.json() == {"detail": "Invalid file type"}
+
