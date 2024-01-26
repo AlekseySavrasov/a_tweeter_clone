@@ -1,4 +1,3 @@
-import os
 from typing import Any, Dict, Optional
 
 from httpx import AsyncClient
