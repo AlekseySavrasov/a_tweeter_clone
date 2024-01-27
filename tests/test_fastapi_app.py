@@ -7,12 +7,6 @@ from app.models import Follower, Tweet, Like, Media
 from app.database import async_session
 
 
-async def test_hello(client: AsyncClient):
-    response = await client.get("/hello")
-    assert response.status_code == 200
-    assert response.json() == ["Hello, World!"]
-
-
 async def test_add_tweet(client: AsyncClient):
     tweet_data = {
         "tweet_data": "Test tweet",
