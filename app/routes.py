@@ -2,16 +2,16 @@ import os
 from pathlib import Path
 from uuid import uuid4
 
-from fastapi import APIRouter, Depends, HTTPException, Header, UploadFile, File
+from fastapi import APIRouter, Depends, UploadFile, File
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
-from starlette.responses import JSONResponse
 
 from app.database import async_session
 from app.models import Follower, Like, Media, Tweet, User
-from app.schemas import TweetIn, TweetOut, MediaResponse, OperationResult, TweetResponse, UserProfileResponse
+from app.schemas import TweetIn, TweetOut, MediaOut, OperationOut, TweetsOut, UserProfileOut
+from app.utils import (check_api_key, check_like_exist, check_tweet_exist, check_user_exist, check_follow_exist,
+                       CustomException, get_user_profile_data, allowed_file, tweet_response)
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
 STATIC_PATH = Path(__file__).parent.parent / "static"
 UPLOAD_DIR = "static/images"
 
@@ -19,63 +19,6 @@ router = APIRouter(
     prefix="/api",
     tags=["api"]
 )
-
-
-class CustomException(HTTPException):
-    def __init__(self, status_code: int, detail: str):
-        super().__init__(status_code=status_code, detail=detail)
-
-
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
-
-
-def create_user_response(user_with_relationships: User):
-    return {
-        "result": True,
-        "user": {
-            "id": user_with_relationships.id,
-            "name": user_with_relationships.name,
-            "followers": [
-                {"id": followers.follower.id, "name": followers.follower.name}
-                for followers in user_with_relationships.followers
-            ] if user_with_relationships.followers else [],
-            "following": [
-                {"id": following.followed.id, "name": following.followed.name}
-                for following in user_with_relationships.following
-            ] if user_with_relationships.following else [],
-        },
-    }
-
-
-async def check_api_key(api_key: str = Header(...)):
-    """Проверка API-ключа"""
-    async with async_session() as session:
-        async with session.begin():
-            user = await session.execute(
-                select(User).filter(User.secret_key == api_key)
-            )
-            user = user.scalar_one_or_none()
-
-            if not user:
-                raise CustomException(status_code=401, detail="Invalid API Key")
-            return user
-
-
-async def get_user_with_relationships(user_id: int = None, user: User = Depends(check_api_key)):
-    try:
-        async with async_session() as session:
-            async with session.begin():
-                query = select(User).filter(User.id == (user_id or user.id)).options(
-                    selectinload(User.followers).selectinload(Follower.follower),
-                    selectinload(User.following).selectinload(Follower.followed),
-                )
-                user_with_relationships = await session.execute(query)
-                return user_with_relationships.scalar()
-
-    except HTTPException as e:
-        return {"result": False, "error_type": "HTTPException", "error_message": str(e)}
 
 
 @router.post("/tweets", status_code=201, response_model=TweetOut)
@@ -92,71 +35,50 @@ async def add_tweet(data: TweetIn, user: User = Depends(check_api_key)):
             await session.flush()
             tweet_id = tweet.id if tweet else None
 
-    return JSONResponse(content={"result": True, "tweet_id": tweet_id}, status_code=201)
+    return TweetOut(result=True, id=tweet_id)
 
 
-@router.delete("/tweets/{tweet_id}", status_code=202, response_model=OperationResult)
+@router.delete("/tweets/{tweet_id}", status_code=202, response_model=OperationOut)
 async def delete_tweet(tweet_id: int, user: User = Depends(check_api_key)):
     """Удаляем твит по его идентификатору"""
     async with async_session() as session:
         async with session.begin():
-            tweet = await session.execute(
-                select(Tweet)
-                .options(selectinload(Tweet.likes))
-                .where(Tweet.id == tweet_id)
-            )
-            tweet = tweet.scalar_one_or_none()
+            tweet = await check_tweet_exist(session=session, check_id=tweet_id)
 
-            if not tweet:
-                raise CustomException(status_code=404, detail="Tweet not found")
-            elif tweet.user_id != user.id:
+            if tweet.user_id != user.id:
                 raise CustomException(status_code=403, detail="You are not allowed to delete this tweet")
 
             await session.delete(tweet)
             await session.commit()
 
-    return {"result": True}
+    return OperationOut(result=True)
 
 
-@router.post("/tweets/{tweet_id}/likes", status_code=201, response_model=OperationResult)
+@router.post("/tweets/{tweet_id}/likes", status_code=201, response_model=OperationOut)
 async def add_like(tweet_id: int, user: User = Depends(check_api_key)):
     """Установление лайка на твит по id"""
     async with async_session() as session:
         async with session.begin():
-            tweet = await session.execute(
-                select(Tweet)
-                .options(selectinload(Tweet.likes))
-                .where(Tweet.id == tweet_id)
-            )
-            tweet = tweet.scalar_one_or_none()
+            await check_tweet_exist(session=session, check_id=tweet_id)
 
-            if not tweet:
-                raise CustomException(status_code=404, detail="Tweet not found")
-
-            like = await session.execute(
-                select(Like).where(Like.tweet_id == tweet_id, Like.user_id == user.id)
-            )
-            like = like.scalar_one_or_none()
-
-            if like:
+            if await check_like_exist(session=session, tweet_id=tweet_id, user_id=user.id):
                 raise CustomException(status_code=400, detail="Like already exists!")
 
             like = Like(tweet_id=tweet_id, user_id=user.id)
             session.add(like)
             await session.flush()
 
-    return {"result": True}
+    return OperationOut(result=True)
 
 
-@router.delete("/tweets/{tweet_id}/likes", status_code=202, response_model=OperationResult)
+@router.delete("/tweets/{tweet_id}/likes", status_code=202, response_model=OperationOut)
 async def delete_like(tweet_id: int, user: User = Depends(check_api_key)):
     """Удаление лайка с твита"""
     async with async_session() as session:
         async with session.begin():
-            unlike = await session.execute(
-                select(Like).where(Like.tweet_id == tweet_id, Like.user_id == user.id)
-            )
-            unlike = unlike.scalar_one_or_none()
+            await check_tweet_exist(session=session, check_id=tweet_id)
+
+            unlike = await check_like_exist(session=session, tweet_id=tweet_id, user_id=user.id)
 
             if not unlike:
                 raise CustomException(status_code=404, detail="Like not found")
@@ -164,10 +86,10 @@ async def delete_like(tweet_id: int, user: User = Depends(check_api_key)):
             await session.delete(unlike)
             await session.commit()
 
-    return {"result": True}
+    return OperationOut(result=True)
 
 
-@router.post("/users/{follow_id}/follow", status_code=201, response_model=OperationResult)
+@router.post("/users/{follow_id}/follow", status_code=201, response_model=OperationOut)
 async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
     """Follow другого пользователя по id"""
     if follow_id == user.id:
@@ -175,16 +97,9 @@ async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
 
     async with async_session() as session:
         async with session.begin():
-            follow_user = await session.execute(select(User).where(User.id == follow_id))
-            follow_user = follow_user.scalar_one_or_none()
+            await check_user_exist(session=session, check_id=follow_id)
 
-            if not follow_user:
-                raise CustomException(status_code=404, detail="User not found")
-
-            follow = await session.execute(
-                select(Follower).where(Follower.followed_id == follow_id, Follower.follower_id == user.id)
-            )
-            follow = follow.scalar_one_or_none()
+            follow = await check_follow_exist(session=session, follow_id=follow_id, user_id=user.id)
 
             if follow:
                 raise CustomException(status_code=400, detail="Follow already exists!")
@@ -193,18 +108,15 @@ async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
             session.add(follow)
             await session.flush()
 
-    return {"result": True}
+    return OperationOut(result=True)
 
 
-@router.delete("/users/{follow_id}/follow", status_code=202, response_model=OperationResult)
+@router.delete("/users/{follow_id}/follow", status_code=202, response_model=OperationOut)
 async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
     """Unfollow другого пользователя"""
     async with async_session() as session:
         async with session.begin():
-            unfollow = await session.execute(
-                select(Follower).where(Follower.followed_id == follow_id, Follower.follower_id == user.id)
-            )
-            unfollow = unfollow.scalar_one_or_none()
+            unfollow = await check_follow_exist(session=session, follow_id=follow_id, user_id=user.id)
 
             if not unfollow:
                 raise CustomException(status_code=404, detail="Follow not found")
@@ -212,10 +124,10 @@ async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
             await session.delete(unfollow)
             await session.commit()
 
-    return {"result": True}
+    return OperationOut(result=True)
 
 
-@router.get("/tweets", response_model=TweetResponse)
+@router.get("/tweets", response_model=TweetsOut)
 async def get_user_tweets(user: User = Depends(check_api_key)):
     try:
         async with async_session() as session:
@@ -234,42 +146,25 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
                 media_data = media_data.all()
                 media_dict = {media[0].id: media[0].file_name for media in media_data}
 
-                tweets_data = [
-                    {
-                        "id": tweet.id,
-                        "content": tweet.tweet_data,
-                        "attachments": [media_dict.get(media_id, None) for media_id in
-                                        tweet.tweet_media_ids] if tweet.tweet_media_ids else [],
-                        "author": {"id": tweet.user.id, "name": tweet.user.name},
-                        "likes": [
-                            {
-                                "user_id": like.user.id,
-                                "name": like.user.name,
-                            }
-                            for like in tweet.likes
-                        ] if tweet.likes else [],
-                    }
-                    for user in users_with_tweets
-                    for tweet in user[0].tweets
-                ]
+                tweets_data = await tweet_response(media_dict=media_dict, users_with_tweets=users_with_tweets)
 
-                return JSONResponse(content={"result": True, "tweets": tweets_data})
+        return TweetsOut(result=True, tweets=tweets_data)
 
-    except HTTPException as e:
-        return JSONResponse(content={"result": False, "error_type": "HTTPException", "error_message": str(e)})
+    except CustomException as ce:
+        return {"result": False, "error_type": "CustomException", "error_message": ce.detail}
 
 
-@router.get("/users/me", response_model=UserProfileResponse)
-async def get_user_profile(user_with_relationships: User = Depends(get_user_with_relationships)):
-    return JSONResponse(content=create_user_response(user_with_relationships))
+@router.get("/users/me", response_model=UserProfileOut)
+async def get_user_profile(user: User = Depends(check_api_key)):
+    return await get_user_profile_data(user.id)
 
 
-@router.get("/users/{user_id}", response_model=UserProfileResponse)
-async def get_user_by_id(user_with_relationships: User = Depends(get_user_with_relationships)):
-    return JSONResponse(content=create_user_response(user_with_relationships))
+@router.get("/users/{user_id}", response_model=UserProfileOut)
+async def get_user_by_id(user_id: int, user: User = Depends(check_api_key)):
+    return await get_user_profile_data(user_id)
 
 
-@router.post("/medias", status_code=201, response_model=MediaResponse)
+@router.post("/medias", status_code=201, response_model=MediaOut)
 async def upload_media(file: UploadFile = File(...), user: User = Depends(check_api_key)):
     if not allowed_file(file.filename):
         raise CustomException(status_code=400, detail="Invalid file type")
@@ -288,4 +183,4 @@ async def upload_media(file: UploadFile = File(...), user: User = Depends(check_
             session.add(media)
             await session.flush()
 
-    return JSONResponse(content={"result": True, "media_id": media.id}, status_code=201)
+    return MediaOut(result=True, media_id=media.id)

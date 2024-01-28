@@ -15,7 +15,7 @@ async def test_add_tweet(client: AsyncClient):
 
     response = await client.post("/api/tweets", headers={"api-key": "test"}, json=tweet_data)
     assert response.status_code == 201
-    assert response.json() == {"result": True, "tweet_id": 4}
+    assert response.json() == {"result": True, "id": 4}
 
     async with async_session() as session:
         result = await session.execute(select(Tweet).where(Tweet.id == 4))
@@ -157,6 +157,12 @@ async def test_get_user_by_id(client: AsyncClient):
     assert "user" in response_data
     assert response_data["user"]["id"] == 2
     assert response_data["user"]["name"] == "user_2"
+
+
+async def test_get_null_user_by_id(client: AsyncClient):
+    response = await client.get(f"/api/users/{10}", headers={"api-key": "test"})
+    assert response.status_code == 404
+    assert response.json() == {"detail": "User not found"}
 
 
 async def test_upload_media(client: AsyncClient, cleanup_uploaded_files):
