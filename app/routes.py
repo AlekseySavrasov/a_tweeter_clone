@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import uuid4
 
 from fastapi import APIRouter, Depends, UploadFile, File
-from sqlalchemy import select
+from sqlalchemy import select, func, desc
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session
@@ -132,21 +132,24 @@ async def get_user_tweets(user: User = Depends(check_api_key)):
     try:
         async with async_session() as session:
             async with session.begin():
-                users_with_tweets = await session.execute(
-                    select(User)
-                    .filter(Follower.follower_id == user.id)
-                    .join(Follower, User.id == Follower.followed_id)
-                    .options(
-                        selectinload(User.tweets).selectinload(Tweet.likes).selectinload(Like.user),
+                followed_users = (
+                    await session.execute(
+                        select(User)
+                        .join(Follower, User.id == Follower.followed_id)
+                        .filter(Follower.follower_id == user.id)
+                        .options(selectinload(User.tweets).selectinload(Tweet.likes).selectinload(Like.user))
                     )
                 )
-                users_with_tweets = users_with_tweets.all()
+                followed_users = followed_users.all()
+
+                tweets = [tweet for followed_user in followed_users for tweet in followed_user[0].tweets]
+                sorted_tweets = sorted(tweets, key=lambda tweet: len(tweet.likes), reverse=True)
 
                 media_data = await session.execute(select(Media))
                 media_data = media_data.all()
                 media_dict = {media[0].id: media[0].file_name for media in media_data}
 
-                tweets_data = await tweet_response(media_dict=media_dict, users_with_tweets=users_with_tweets)
+                tweets_data = await tweet_response(media_dict=media_dict, tweets=sorted_tweets)
 
         return TweetsOut(result=True, tweets=tweets_data)
 

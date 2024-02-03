@@ -89,7 +89,7 @@ async def get_user_profile_data(user_id):
             return UserProfileOut.from_db_user(user_data)
 
 
-async def tweet_response(media_dict, users_with_tweets):
+async def tweet_response(media_dict, tweets):
     return [
         {
             "id": tweet.id,
@@ -98,13 +98,9 @@ async def tweet_response(media_dict, users_with_tweets):
                             tweet.tweet_media_ids] if tweet.tweet_media_ids else [],
             "author": {"id": tweet.user.id, "name": tweet.user.name},
             "likes": [
-                {
-                    "user_id": like.user.id,
-                    "name": like.user.name,
-                }
+                {"user_id": like.user.id, "name": like.user.name}
                 for like in tweet.likes
             ] if tweet.likes else [],
         }
-        for user in users_with_tweets
-        for tweet in user[0].tweets
+        for tweet in tweets
     ]
