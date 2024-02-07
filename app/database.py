@@ -1,21 +1,20 @@
 import os
-from typing import AsyncGenerator
 
-from sqlalchemy import MetaData
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker, declarative_base
+from sqlalchemy import MetaData, Table, engine
+from sqlalchemy.ext.asyncio import AsyncSession, AsyncEngine, create_async_engine
+from sqlalchemy.orm import declarative_base, sessionmaker
 
-DATABASE_URL = os.getenv("DATABASE_URL")
-Base = declarative_base()
+DATABASE_URL: str = os.getenv("DATABASE_URL")
+Base: declarative_base = declarative_base()
 
-metadata = MetaData()
+metadata: MetaData = MetaData()
 
-engine = create_async_engine(DATABASE_URL)
-async_session = sessionmaker(
-    bind=engine, class_=AsyncSession, expire_on_commit=False,
+db_engine: AsyncEngine = create_async_engine(DATABASE_URL)
+async_session: sessionmaker = sessionmaker(
+    bind=db_engine, class_=AsyncSession, expire_on_commit=False,
 )
 
-INITIAL_DATA = {
+INITIAL_DATA: dict[str: list] = {
     "users": [
             {"name": "user_1", "secret_key": "test"},
             {"name": "user_2", "secret_key": "test_2"},
@@ -40,9 +39,18 @@ INITIAL_DATA = {
 }
 
 
-def initialize_table(target, connection, **kw):
-    """This method receives a table, a connection and inserts data to that table"""
-    table_name = str(target)
+def initialize_table(target: Table, connection: engine.Connection, **kw):
+    """
+    This method receives a table and a connection, and inserts data into that table.
+
+    :param target: The target table to initialize.
+    :type target: sqlalchemy.Table
+
+    :param connection: The database connection to use for inserting data.
+    :type connection: sqlalchemy.engine.Connection
+    """
+    table_name: str = str(target)
 
     if table_name in INITIAL_DATA and len(INITIAL_DATA[table_name]) > 0:
         connection.execute(target.insert(), INITIAL_DATA[table_name])
+

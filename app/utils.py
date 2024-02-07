@@ -1,26 +1,45 @@
+from typing import Any, Dict, List
+
 from fastapi import Header, HTTPException
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session
-from app.models import User, Tweet, Like, Follower
+from app.models import Like, Follower, Tweet, User
 from app.schemas import UserProfileOut
 
-ALLOWED_EXTENSIONS = {'png', 'jpg', 'jpeg', 'gif'}
+ALLOWED_EXTENSIONS: set[str] = {'png', 'jpg', 'jpeg', 'gif'}
 
 
 class CustomException(HTTPException):
+    """
+    Кастомное исключение для обработки ошибок HTTP.
+
+    :param status_code: Код статуса HTTP.
+    :param detail: Детали ошибки.
+    """
     def __init__(self, status_code: int, detail: str):
         super().__init__(status_code=status_code, detail=detail)
 
 
-def allowed_file(filename):
-    return '.' in filename and \
-           filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
+def allowed_file(filename: str) -> bool:
+    """
+    Проверяет разрешенное расширение файла.
+
+    :param filename: Имя файла для проверки.
+    :return: Результат проверки (True, если разрешенное расширение, иначе False).
+    """
+    return '.' in filename and filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
 
 
-async def check_api_key(api_key: str = Header(...)):
-    """Проверка API-ключа"""
+async def check_api_key(api_key: str = Header(...)) -> User:
+    """
+    Проверяет API-ключ пользователя.
+
+    :param api_key: API-ключ пользователя.
+    :return: Объект пользователя, если ключ действителен.
+    :raises CustomException: Если ключ недействителен (401).
+    """
     async with async_session() as session:
         async with session.begin():
             user = await session.execute(
@@ -33,7 +52,14 @@ async def check_api_key(api_key: str = Header(...)):
             return user
 
 
-async def check_user_exist(session, check_id):
+async def check_user_exist(session, check_id: int):
+    """
+    Проверяет существование пользователя.
+
+    :param session: Сессия базы данных.
+    :param check_id: ID пользователя для проверки.
+    :raises CustomException: Если пользователь не найден (404).
+    """
     follow_user = await session.execute(
         select(User)
         .where(User.id == check_id)
@@ -44,7 +70,15 @@ async def check_user_exist(session, check_id):
         raise CustomException(status_code=404, detail="User not found")
 
 
-async def check_tweet_exist(session, check_id):
+async def check_tweet_exist(session, check_id: int):
+    """
+    Проверяет существование твита.
+
+    :param session: Сессия базы данных.
+    :param check_id: ID твита для проверки.
+    :return: Объект твита, если существует.
+    :raises CustomException: Если твит не найден (404).
+    """
     tweet = await session.execute(
         select(Tweet)
         .options(selectinload(Tweet.likes))
@@ -58,7 +92,15 @@ async def check_tweet_exist(session, check_id):
     return tweet
 
 
-async def check_like_exist(session, tweet_id, user_id):
+async def check_like_exist(session, tweet_id: int, user_id: int):
+    """
+    Проверяет существование лайка.
+
+    :param session: Сессия базы данных.
+    :param tweet_id: ID твита.
+    :param user_id: ID пользователя.
+    :return: Объект лайка, если существует.
+    """
     like = await session.execute(
         select(Like).where(Like.tweet_id == tweet_id, Like.user_id == user_id)
     )
@@ -67,7 +109,15 @@ async def check_like_exist(session, tweet_id, user_id):
     return like
 
 
-async def check_follow_exist(session, follow_id, user_id):
+async def check_follow_exist(session, follow_id: int, user_id: int):
+    """
+    Проверяет существование подписки.
+
+    :param session: Сессия базы данных.
+    :param follow_id: ID пользователя, на которого подписываются.
+    :param user_id: ID пользователя, который подписывается.
+    :return: Объект подписки, если существует.
+    """
     follow = await session.execute(
         select(Follower).where(Follower.followed_id == follow_id, Follower.follower_id == user_id)
     )
@@ -76,7 +126,13 @@ async def check_follow_exist(session, follow_id, user_id):
     return follow
 
 
-async def get_user_profile_data(user_id):
+async def get_user_profile_data(user_id: int) -> UserProfileOut:
+    """
+    Получает данные профиля пользователя.
+
+    :param user_id: ID пользователя.
+    :return: Данные профиля пользователя.
+    """
     async with async_session() as session:
         async with session.begin():
             await check_user_exist(session, user_id)
@@ -89,7 +145,14 @@ async def get_user_profile_data(user_id):
             return UserProfileOut.from_db_user(user_data)
 
 
-async def tweet_response(media_dict, tweets):
+async def tweet_response(media_dict: Dict[int, Any], tweets: List[Tweet]) -> List[Dict[str, Any]]:
+    """
+    Формирует ответ на запрос твитов.
+
+    :param media_dict: Словарь медиафайлов.
+    :param tweets: Список твитов.
+    :return: Список ответов на запрос твитов.
+    """
     return [
         {
             "id": tweet.id,
