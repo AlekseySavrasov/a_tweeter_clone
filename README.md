@@ -1,6 +1,48 @@
-Project setup
+# Проект "A tweeter clone"
 
-- Create a file ".env" in the root directory.
-- Fill out the ".env" like ".evn.example" using your own credentials.
-- In a terminal of the project run the command "docker-compose up -d"
-- In a browser, open the link http://localhost:8888/ to start the application
+![A tweeter clone](static/images/example_app.png)
+
+## Описание
+
+A tweeter clone - это RESTful API для создания и управления социальными медиа-платформами. 
+API предоставляет функционал для создания и управления пользователями, твитами, лайками, медиафайлами и подписками.
+
+## Демо
+
+* [Документация API (Swagger)](http://localhost:8000/docs)
+
+## Технологии
+
+* Python - основной язык программирования
+* FastAPI - фреймворк для создания API на Python
+* SQLAlchemy - ORM для работы с базой данных
+* PostgreSQL - база данных для хранения данных
+* pytest-asyncio - библиотека для написания асинхронных тестов
+* Docker - контейнеризация приложения
+
+## Уникальные особенности
+
+* Асинхронное программирование для обеспечения высокой производительности API
+* Использование SQLAlchemy для работы с базой данных с помощью ORM
+* Встроенная поддержка загрузки медиафайлов и их управление через API
+
+## Техническое описание проекта
+
+### Установка
+
+1. Склонировать репозиторий: git clone https://gitlab.skillbox.ru/aleksei_savrasov/python_advanced_diploma.git
+2. Перейти в директорию проекта: cd python_advanced_diploma
+
+### Настройка
+
+1. Создайте файл «.env» в корневом каталоге.
+2. Заполните ".env", например ".evn.example", используя свои учетные данные.
+
+### Запуск
+
+1. В терминале проекта выполните команду «docker-compose up -d».
+2. В браузере откройте ссылку http://localhost:8888/.
+
+## Авторы
+
+* Алексей Саврасов - [@aleksei_savrasov](https://gitlab.skillbox.ru/aleksei_savrasov)
