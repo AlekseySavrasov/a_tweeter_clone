@@ -1,4 +1,6 @@
-import os
+"""Модуль, содержащий определения маршрутов для приложения."""
+
+from os import path
 from pathlib import Path
 from uuid import uuid4
 
@@ -6,38 +8,37 @@ from fastapi import APIRouter, Depends, File, UploadFile
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
+from app import utils
 from app.database import async_session
 from app.models import Follower, Like, Media, Tweet, User
 from app.schemas import MediaOut, OperationOut, TweetIn, TweetOut, TweetsOut, UserProfileOut
-from app.utils import (check_api_key, check_like_exist, check_tweet_exist, check_user_exist, check_follow_exist,
-                       CustomException, get_user_profile_data, allowed_file, tweet_response)
 
 STATIC_PATH: Path = Path(__file__).parent.parent / "static"
 UPLOAD_DIR: str = "static/images"
 
 router: APIRouter = APIRouter(
     prefix="/api",
-    tags=["api"]
+    tags=["api"],
 )
 
 
 @router.post("/tweets", status_code=201, response_model=TweetOut)
-async def add_tweet(data: TweetIn, user: User = Depends(check_api_key)):
+async def add_tweet(tweet_data: TweetIn, user: User = Depends(utils.check_api_key)):
     """
-    Добавление нового твита
+    Добавление нового твита.
 
-    :param data: Данные нового твита
-    :param user: Пользователь, добавляющий твит (проверенный с помощью API-ключа)
-    :raises CustomException: Если данные твита неверны (400)
-    :return: Информация о добавленном твите
+    :param tweet_data: Данные нового твита.
+    :param user: Пользователь, добавляющий твит (проверенный с помощью API-ключа).
+    :raises CustomException: Если данные твита неверны (400).
+    :return: Информация о добавленном твите.
     """
-    if not data:
-        raise CustomException(status_code=400, detail="Invalid tweet data")
+    if not tweet_data:
+        raise utils.CustomException(status_code=400, detail="Invalid tweet data")
 
     tweet: Tweet = Tweet(
-        tweet_data=data.tweet_data,
-        tweet_media_ids=data.tweet_media_ids,
-        user_id=user.id
+        tweet_data=tweet_data.tweet_data,
+        tweet_media_ids=tweet_data.tweet_media_ids,
+        user_id=user.id,
     )
 
     async with async_session() as session:
@@ -50,21 +51,21 @@ async def add_tweet(data: TweetIn, user: User = Depends(check_api_key)):
 
 
 @router.delete("/tweets/{tweet_id}", status_code=202, response_model=OperationOut)
-async def delete_tweet(tweet_id: int, user: User = Depends(check_api_key)):
+async def delete_tweet(tweet_id: int, user: User = Depends(utils.check_api_key)):
     """
-    Удаление твита по его идентификатору
+    Удаление твита по его идентификатору.
 
-    :param tweet_id: id удаляемого твита
-    :param user: Пользователь, удаляющий твит (проверенный с помощью API-ключа)
-    :raises CustomException: Если твит не принадлежит текущему пользователю (403)
-    :return: Информация об успешном удалении твита
+    :param tweet_id: id удаляемого твита.
+    :param user: Пользователь, удаляющий твит (проверенный с помощью API-ключа).
+    :raises CustomException: Если твит не принадлежит текущему пользователю (403).
+    :return: Информация об успешном удалении твита.
     """
     async with async_session() as session:
         async with session.begin():
-            tweet = await check_tweet_exist(session=session, check_id=tweet_id)
+            tweet = await utils.check_tweet_exist(session=session, check_id=tweet_id)
 
             if tweet.user_id != user.id:
-                raise CustomException(status_code=403, detail="You are not allowed to delete this tweet")
+                raise utils.CustomException(status_code=403, detail="You are not allowed to delete this tweet")
 
             await session.delete(tweet)
             await session.commit()
@@ -73,21 +74,21 @@ async def delete_tweet(tweet_id: int, user: User = Depends(check_api_key)):
 
 
 @router.post("/tweets/{tweet_id}/likes", status_code=201, response_model=OperationOut)
-async def add_like(tweet_id: int, user: User = Depends(check_api_key)):
+async def add_like(tweet_id: int, user: User = Depends(utils.check_api_key)):
     """
-    Установление лайка на твит по id
+    Установление лайка на твит по id.
 
-    :param tweet_id: id твита на который устанавливается лайк
-    :param user: Пользователь, добавляющий лайк (проверенный с помощью API-ключа)
-    :raises CustomException: Если лайк уже установлен на выбранный твит (400)
-    :return: Информация об успешном установлении лайка на твит
+    :param tweet_id: id твита на который устанавливается лайк.
+    :param user: Пользователь, добавляющий лайк (проверенный с помощью API-ключа).
+    :raises CustomException: Если лайк уже установлен на выбранный твит (400).
+    :return: Информация об успешном установлении лайка на твит.
     """
     async with async_session() as session:
         async with session.begin():
-            await check_tweet_exist(session=session, check_id=tweet_id)
+            await utils.check_tweet_exist(session=session, check_id=tweet_id)
 
-            if await check_like_exist(session=session, tweet_id=tweet_id, user_id=user.id):
-                raise CustomException(status_code=400, detail="Like already exists!")
+            if await utils.check_like_exist(session=session, tweet_id=tweet_id, user_id=user.id):
+                raise utils.CustomException(status_code=400, detail="Like already exists!")
 
             like: Like = Like(tweet_id=tweet_id, user_id=user.id)
             session.add(like)
@@ -97,9 +98,9 @@ async def add_like(tweet_id: int, user: User = Depends(check_api_key)):
 
 
 @router.delete("/tweets/{tweet_id}/likes", status_code=202, response_model=OperationOut)
-async def delete_like(tweet_id: int, user: User = Depends(check_api_key)):
+async def delete_like(tweet_id: int, user: User = Depends(utils.check_api_key)):
     """
-    Удаление лайка с твита
+    Удаление лайка с твита.
 
     :param tweet_id: id твита с которого удаляется лайк
     :param user: Пользователь, удаляющий лайк (проверенный с помощью API-ключа)
@@ -108,12 +109,12 @@ async def delete_like(tweet_id: int, user: User = Depends(check_api_key)):
     """
     async with async_session() as session:
         async with session.begin():
-            await check_tweet_exist(session=session, check_id=tweet_id)
+            await utils.check_tweet_exist(session=session, check_id=tweet_id)
 
-            unlike = await check_like_exist(session=session, tweet_id=tweet_id, user_id=user.id)
+            unlike = await utils.check_like_exist(session=session, tweet_id=tweet_id, user_id=user.id)
 
             if not unlike:
-                raise CustomException(status_code=404, detail="Like not found")
+                raise utils.CustomException(status_code=404, detail="Like not found")
 
             await session.delete(unlike)
             await session.commit()
@@ -122,9 +123,9 @@ async def delete_like(tweet_id: int, user: User = Depends(check_api_key)):
 
 
 @router.post("/users/{follow_id}/follow", status_code=201, response_model=OperationOut)
-async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
+async def add_follow(follow_id: int, user: User = Depends(utils.check_api_key)):
     """
-    Follow другого пользователя по id
+    Follow другого пользователя по id.
 
     :param follow_id: id отслеживаемого пользователя
     :param user: Пользователь, отслеживающий, другого пользователя (проверенный с помощью API-ключа)
@@ -132,16 +133,16 @@ async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
     :return: Информация об успешном начале отслеживания
     """
     if follow_id == user.id:
-        raise CustomException(status_code=400, detail="The current user can't follow himself")
+        raise utils.CustomException(status_code=400, detail="The current user can't follow himself")
 
     async with async_session() as session:
         async with session.begin():
-            await check_user_exist(session=session, check_id=follow_id)
+            await utils.check_user_exist(session=session, check_id=follow_id)
 
-            follow = await check_follow_exist(session=session, follow_id=follow_id, user_id=user.id)
+            follow = await utils.check_follow_exist(session=session, follow_id=follow_id, user_id=user.id)
 
             if follow:
-                raise CustomException(status_code=400, detail="Follow already exists!")
+                raise utils.CustomException(status_code=400, detail="Follow already exists!")
 
             follow: Follower = Follower(follower_id=user.id, followed_id=follow_id)
             session.add(follow)
@@ -151,9 +152,9 @@ async def add_follow(follow_id: int, user: User = Depends(check_api_key)):
 
 
 @router.delete("/users/{follow_id}/follow", status_code=202, response_model=OperationOut)
-async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
+async def delete_follow(follow_id: int, user: User = Depends(utils.check_api_key)):
     """
-    Unfollow другого пользователя по id
+    Unfollow другого пользователя по id.
 
     :param follow_id: id пользователя которого перестают отслеживать
     :param user: Пользователь, перестающий отслеживать, другого пользователя (проверенный с помощью API-ключа)
@@ -162,10 +163,10 @@ async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
     """
     async with async_session() as session:
         async with session.begin():
-            unfollow = await check_follow_exist(session=session, follow_id=follow_id, user_id=user.id)
+            unfollow = await utils.check_follow_exist(session=session, follow_id=follow_id, user_id=user.id)
 
             if not unfollow:
-                raise CustomException(status_code=404, detail="Follow not found")
+                raise utils.CustomException(status_code=404, detail="Follow not found")
 
             await session.delete(unfollow)
             await session.commit()
@@ -174,80 +175,81 @@ async def delete_follow(follow_id: int, user: User = Depends(check_api_key)):
 
 
 @router.get("/tweets", response_model=TweetsOut)
-async def get_user_tweets(user: User = Depends(check_api_key)):
+async def get_user_tweets(user: User = Depends(utils.check_api_key)):
     """
-    Пользователь может получить ленту из твитов отсортированных в порядке убывания
-    по популярности от пользователей, которых он фоловит
+    Пользователь может получить ленту из твитов отсортированных в порядке убывания.
+
+    По популярности от пользователей, которых он фоловит.
 
     :param user: Пользователь, добавляющий твит (проверенный с помощью API-ключа)
     :return: Информация о ленте твитов текущего пользователя
     """
-    try:
-        async with async_session() as session:
-            async with session.begin():
+    async with async_session() as session:
+        async with session.begin():
+            try:
                 followed_users = (
                     await session.execute(
-                        select(User)
-                        .join(Follower, User.id == Follower.followed_id)
-                        .filter(Follower.follower_id == user.id)
-                        .options(selectinload(User.tweets).selectinload(Tweet.likes).selectinload(Like.user))
+                        select(User).
+                        join(Follower, User.id == Follower.followed_id).
+                        filter(Follower.follower_id == user.id).
+                        options(selectinload(User.tweets).selectinload(Tweet.likes).selectinload(Like.user))
                     )
                 )
-                followed_users = followed_users.all()
+            except utils.CustomException as ce:
+                return {"result": False, "error_type": "CustomException", "error_message": ce.detail}
 
-                tweets: list = [tweet for followed_user in followed_users for tweet in followed_user[0].tweets]
-                sorted_tweets: list = sorted(tweets, key=lambda tweet: len(tweet.likes), reverse=True)
+            followed_users = followed_users.all()
 
-                media_data = await session.execute(select(Media))
-                media_data = media_data.all()
-                media_dict: dict = {media[0].id: media[0].file_name for media in media_data}
+            tweets: list = [tweet for followed_user in followed_users for tweet in followed_user[0].tweets]
+            sorted_tweets: list = sorted(tweets, key=lambda tweet: len(tweet.likes), reverse=True)
 
-                tweets_data = await tweet_response(media_dict=media_dict, tweets=sorted_tweets)
+            media_data = await session.execute(select(Media))
+            media_data = media_data.all()
+            media_dict: dict = {media[0].id: media[0].file_name for media in media_data}
 
-        return TweetsOut(result=True, tweets=tweets_data)
+            tweets_data = await utils.tweet_response(media_dict=media_dict, tweets=sorted_tweets)
 
-    except CustomException as ce:
-        return {"result": False, "error_type": "CustomException", "error_message": ce.detail}
+    return TweetsOut(result=True, tweets=tweets_data)
 
 
 @router.get("/users/me", response_model=UserProfileOut)
-async def get_user_profile(user: User = Depends(check_api_key)):
+async def get_user_profile(user: User = Depends(utils.check_api_key)):
     """
-    Пользователь может получить информацию о своём профиле
+    Пользователь может получить информацию о своём профиле.
 
     :param user: Пользователь, добавляющий твит (проверенный с помощью API-ключа)
     :return: Информация о профиле текущего пользователя
     """
-    return await get_user_profile_data(user.id)
+    return await utils.get_user_profile_data(user.id)
 
 
 @router.get("/users/{user_id}", response_model=UserProfileOut)
-async def get_user_by_id(user_id: int, user: User = Depends(check_api_key)):
+async def get_user_by_id(user_id: int, user: User = Depends(utils.check_api_key)):
     """
-    Пользователь может получить информацию о произвольном профиле по его id
+    Пользователь может получить информацию о произвольном профиле по его id.
 
     :param user_id: id искомого пользователя
     :param user: Пользователь, добавляющий твит (проверенный с помощью API-ключа)
     :return: Информация о профиле пользователя по id
     """
-    return await get_user_profile_data(user_id)
+    return await utils.get_user_profile_data(user_id)
 
 
 @router.post("/medias", status_code=201, response_model=MediaOut)
-async def upload_media(file: UploadFile = File(...), user: User = Depends(check_api_key)):
+async def upload_media(file: UploadFile = File(...), user: User = Depends(utils.check_api_key)):
     """
-    Endpoint для загрузки файлов из твита. Загрузка происходит через отправку формы
+    Endpoint для загрузки файлов из твита. Загрузка происходит через отправку формы.
 
     :param file: Файл для загрузки в твит
     :param user: Пользователь, добавляющий файл в твит (проверенный с помощью API-ключа)
     :raises CustomException: Если формат файла некорректный (400)
     :return: Информация об успешном добавлении файла
     """
-    if not allowed_file(file.filename):
-        raise CustomException(status_code=400, detail="Invalid file type")
+    if not utils.allowed_file(file.filename):
+        raise utils.CustomException(status_code=400, detail="Invalid file type")
 
-    unique_filename: str = f"{uuid4()}{os.path.splitext(file.filename)[1]}"
-    file_path: str = os.path.join(UPLOAD_DIR, unique_filename)
+    unique_filename: str = f"{uuid4()}{path.splitext(file.filename)[1]}"
+    file_path: str = path.join(UPLOAD_DIR, unique_filename)
 
     with open(file_path, "wb") as file_object:
         file_object.write(file.file.read())

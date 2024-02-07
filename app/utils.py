@@ -1,3 +1,5 @@
+"""Модуль вспомогательных функций."""
+
 from typing import Any, Dict, List
 
 from fastapi import Header, HTTPException
@@ -5,10 +7,10 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.database import async_session
-from app.models import Like, Follower, Tweet, User
+from app.models import Follower, Like, Tweet, User
 from app.schemas import UserProfileOut
 
-ALLOWED_EXTENSIONS: set[str] = {'png', 'jpg', 'jpeg', 'gif'}
+allowed_extensions: set[str] = {'png', 'jpg', 'jpeg', 'gif'}
 
 
 class CustomException(HTTPException):
@@ -18,6 +20,7 @@ class CustomException(HTTPException):
     :param status_code: Код статуса HTTP.
     :param detail: Детали ошибки.
     """
+
     def __init__(self, status_code: int, detail: str):
         super().__init__(status_code=status_code, detail=detail)
 
@@ -29,7 +32,7 @@ def allowed_file(filename: str) -> bool:
     :param filename: Имя файла для проверки.
     :return: Результат проверки (True, если разрешенное расширение, иначе False).
     """
-    return '.' in filename and filename.rsplit('.', 1)[1] in ALLOWED_EXTENSIONS
+    return '.' in filename and filename.rsplit('.', 1)[1] in allowed_extensions
 
 
 async def check_api_key(api_key: str = Header(...)) -> User:
@@ -43,7 +46,7 @@ async def check_api_key(api_key: str = Header(...)) -> User:
     async with async_session() as session:
         async with session.begin():
             user = await session.execute(
-                select(User).filter(User.secret_key == api_key)
+                select(User).filter(User.secret_key == api_key),
             )
             user = user.scalar_one_or_none()
 
@@ -61,8 +64,8 @@ async def check_user_exist(session, check_id: int):
     :raises CustomException: Если пользователь не найден (404).
     """
     follow_user = await session.execute(
-        select(User)
-        .where(User.id == check_id)
+        select(User).
+        where(User.id == check_id),
     )
     follow_user = follow_user.scalar_one_or_none()
 
@@ -80,9 +83,9 @@ async def check_tweet_exist(session, check_id: int):
     :raises CustomException: Если твит не найден (404).
     """
     tweet = await session.execute(
-        select(Tweet)
-        .options(selectinload(Tweet.likes))
-        .where(Tweet.id == check_id)
+        select(Tweet).
+        options(selectinload(Tweet.likes)).
+        where(Tweet.id == check_id),
     )
     tweet = tweet.scalar_one_or_none()
 
@@ -102,11 +105,10 @@ async def check_like_exist(session, tweet_id: int, user_id: int):
     :return: Объект лайка, если существует.
     """
     like = await session.execute(
-        select(Like).where(Like.tweet_id == tweet_id, Like.user_id == user_id)
+        select(Like).where(Like.tweet_id == tweet_id, Like.user_id == user_id),
     )
-    like = like.scalar_one_or_none()
 
-    return like
+    return like.scalar_one_or_none()
 
 
 async def check_follow_exist(session, follow_id: int, user_id: int):
@@ -119,11 +121,11 @@ async def check_follow_exist(session, follow_id: int, user_id: int):
     :return: Объект подписки, если существует.
     """
     follow = await session.execute(
-        select(Follower).where(Follower.followed_id == follow_id, Follower.follower_id == user_id)
+        select(Follower).
+        where(Follower.followed_id == follow_id, Follower.follower_id == user_id),
     )
-    follow = follow.scalar_one_or_none()
 
-    return follow
+    return follow.scalar_one_or_none()
 
 
 async def get_user_profile_data(user_id: int) -> UserProfileOut:
@@ -157,8 +159,9 @@ async def tweet_response(media_dict: Dict[int, Any], tweets: List[Tweet]) -> Lis
         {
             "id": tweet.id,
             "content": tweet.tweet_data,
-            "attachments": [media_dict.get(media_id, None) for media_id in
-                            tweet.tweet_media_ids] if tweet.tweet_media_ids else [],
+            "attachments": [
+                media_dict.get(media_id, None) for media_id in tweet.tweet_media_ids
+            ] if tweet.tweet_media_ids else [],
             "author": {"id": tweet.user.id, "name": tweet.user.name},
             "likes": [
                 {"user_id": like.user.id, "name": like.user.name}

@@ -1,10 +1,18 @@
-from typing import Any, Dict, Optional
+"""Модуль, содержащий тесты для маршрутов приложения."""
+
+from typing import Any
 
 from httpx import AsyncClient
 from sqlalchemy import select
 
-from app.models import Follower, Like, Media, Tweet
 from app.database import async_session
+from app.models import Follower, Like, Media, Tweet
+
+test_headers = {
+    1: {"api-key": "test"},
+    2: {"api-key": "test_2"},
+    3: {"api-key": "test_3"},
+}
 
 
 async def test_add_tweet(client: AsyncClient) -> None:
@@ -16,21 +24,21 @@ async def test_add_tweet(client: AsyncClient) -> None:
     """
     tweet_data: dict[str, Any] = {
         "tweet_data": "Test tweet",
-        "tweet_media_ids": [1, 2, 3]
+        "tweet_media_ids": [1, 2, 3],
     }
 
-    response = await client.post("/api/tweets", headers={"api-key": "test"}, json=tweet_data)
+    response = await client.post("/api/tweets", headers=test_headers[1], json=tweet_data)
     assert response.status_code == 201
     assert response.json() == {"result": True, "id": 4}
 
     async with async_session() as session:
-        result = await session.execute(select(Tweet).where(Tweet.id == 4))
-        new_tweet = result.scalar()
+        result_tweet = await session.execute(select(Tweet).where(Tweet.id == 4))
+        new_tweet = result_tweet.scalar()
         assert new_tweet.to_json() == {
             "id": 4,
             "tweet_data": "Test tweet",
             "tweet_media_ids": [1, 2, 3],
-            "user_id": 1
+            "user_id": 1,
         }
 
 
@@ -41,13 +49,13 @@ async def test_delete_tweet(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.delete(f"/api/tweets/{1}", headers={"api-key": "test"})
+    response = await client.delete(f"/api/tweets/{1}", headers=test_headers[1])
     assert response.status_code == 202
     assert response.json() == {"result": True}
 
     async with async_session() as session:
-        result = await session.execute(select(Tweet).where(Tweet.id == 1))
-        old_tweet = result.scalar()
+        result_tweet = await session.execute(select(Tweet).where(Tweet.id == 1))
+        old_tweet = result_tweet.scalar()
         assert old_tweet is None
 
 
@@ -58,13 +66,13 @@ async def test_add_like(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.post(f"/api/tweets/{1}/likes", headers={"api-key": "test"})
+    response = await client.post(f"/api/tweets/{1}/likes", headers=test_headers[1])
     assert response.status_code == 201
     assert response.json() == {"result": True}
 
     async with async_session() as session:
-        result = await session.execute(select(Like).where(Like.id == 5))
-        new_like = result.scalar()
+        result_like = await session.execute(select(Like).where(Like.id == 5))
+        new_like = result_like.scalar()
         assert new_like.to_json() == {
             "id": 5,
             "user_id": 1,
@@ -79,7 +87,7 @@ async def test_add_like_with_null_tweet(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.post(f"/api/tweets/{10}/likes", headers={"api-key": "test"})
+    response = await client.post(f"/api/tweets/{10}/likes", headers=test_headers[1])
     assert response.status_code == 404
     assert response.json() == {"error_message": "Tweet not found", "error_type": "CustomException"}
 
@@ -91,7 +99,7 @@ async def test_add_like_which_exists(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.post(f"/api/tweets/{2}/likes", headers={"api-key": "test"})
+    response = await client.post(f"/api/tweets/{2}/likes", headers=test_headers[1])
     assert response.status_code == 400
     assert response.json() == {"error_message": "Like already exists!", "error_type": "CustomException"}
 
@@ -103,7 +111,7 @@ async def test_delete_like(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.delete(f"/api/tweets/{1}/likes", headers={"api-key": "test_3"})
+    response = await client.delete(f"/api/tweets/{1}/likes", headers=test_headers[3])
     assert response.status_code == 202
     assert response.json() == {"result": True}
 
@@ -120,15 +128,16 @@ async def test_add_follow(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.post(f"/api/users/{3}/follow", headers={"api-key": "test_2"})
+    response = await client.post(f"/api/users/{3}/follow", headers=test_headers[2])
     assert response.status_code == 201
     assert response.json() == {"result": True}
 
     async with async_session() as session:
-        result = await session.execute(
-            select(Follower).where(Follower.follower_id == 2, Follower.followed_id == 3)
+        result_follow = await session.execute(
+            select(Follower).
+            where(Follower.follower_id == 2, Follower.followed_id == 3),
         )
-        new_follow = result.scalar()
+        new_follow = result_follow.scalar()
         assert new_follow is not None
 
 
@@ -139,7 +148,7 @@ async def test_add_follow_which_exist(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.post(f"/api/users/{2}/follow", headers={"api-key": "test"})
+    response = await client.post(f"/api/users/{2}/follow", headers=test_headers[1])
     assert response.status_code == 400
     assert response.json() == {"error_message": "Follow already exists!", "error_type": "CustomException"}
 
@@ -151,10 +160,12 @@ async def test_add_follow_yourself(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.post(f"/api/users/{1}/follow", headers={"api-key": "test"})
+    response = await client.post(f"/api/users/{1}/follow", headers=test_headers[1])
     assert response.status_code == 400
-    assert response.json() == {"error_message": "The current user can't follow himself",
-                               "error_type": "CustomException"}
+    assert response.json() == {
+        "error_message": "The current user can't follow himself",
+        "error_type": "CustomException",
+    }
 
 
 async def test_add_follow_null_user(client: AsyncClient) -> None:
@@ -164,7 +175,7 @@ async def test_add_follow_null_user(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.post(f"/api/users/{10}/follow", headers={"api-key": "test"})
+    response = await client.post(f"/api/users/{10}/follow", headers=test_headers[1])
     assert response.status_code == 404
     assert response.json() == {"error_message": "User not found", "error_type": "CustomException"}
 
@@ -176,15 +187,17 @@ async def test_delete_follow(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.delete(f"/api/users/{3}/follow", headers={"api-key": "test"})
+    response = await client.delete(f"/api/users/{3}/follow", headers=test_headers[1])
     assert response.status_code == 202
     assert response.json() == {"result": True}
 
     async with async_session() as session:
-        result = await session.execute(
-            select(Follower).where(Follower.follower_id == 1, Follower.followed_id == 3)
+        result_follow = await session.execute(
+            select(Follower).
+            where(Follower.follower_id == 1, Follower.followed_id == 3),
         )
-        old_follow = result.scalar()
+        old_follow = result_follow.scalar()
+
         assert old_follow is None
 
 
@@ -195,14 +208,13 @@ async def test_get_user_tweets(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.get("/api/tweets", headers={"api-key": "test"})
+    response = await client.get("/api/tweets", headers=test_headers[1])
     response_data = response.json()
     tweets_data = response_data["tweets"]
     tweet_data = tweets_data[0]
 
     assert response.status_code == 200
     assert response_data["result"] is True
-    assert len(tweets_data) > 0
 
     for elem in ("id", "content", "attachments", "author", "likes"):
         assert elem in tweet_data
@@ -215,7 +227,7 @@ async def test_get_user_profile(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.get("/api/users/me", headers={"api-key": "test"})
+    response = await client.get("/api/users/me", headers=test_headers[1])
 
     assert response.status_code == 200
 
@@ -233,7 +245,7 @@ async def test_get_user_by_id(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.get(f"/api/users/{2}", headers={"api-key": "test"})
+    response = await client.get(f"/api/users/{2}", headers=test_headers[1])
 
     assert response.status_code == 200
 
@@ -251,7 +263,7 @@ async def test_get_null_user_by_id(client: AsyncClient) -> None:
     :param client: Клиент для отправки запросов API.
     :return: None
     """
-    response = await client.get(f"/api/users/{10}", headers={"api-key": "test"})
+    response = await client.get(f"/api/users/{10}", headers=test_headers[1])
     assert response.status_code == 404
     assert response.json() == {"error_message": "User not found", "error_type": "CustomException"}
 
@@ -265,7 +277,7 @@ async def test_upload_media(client: AsyncClient, cleanup_uploaded_files) -> None
     :return: None
     """
     files = {"file": ("test_file.jpg", b"Hello, this is a test file!")}
-    response = await client.post("/api/medias", headers={"api-key": "test"}, files=files)
+    response = await client.post("/api/medias", headers=test_headers[1], files=files)
     assert response.status_code == 201
     assert response.json() == {"result": True, "media_id": 1}
 
@@ -285,6 +297,6 @@ async def test_upload_wrong_media(client: AsyncClient, cleanup_uploaded_files) -
     :return: None
     """
     files = {"file": ("test_file.txt", b"Hello, this is a test file!")}
-    response = await client.post("/api/medias", headers={"api-key": "test"}, files=files)
+    response = await client.post("/api/medias", headers=test_headers[1], files=files)
     assert response.status_code == 400
     assert response.json() == {"error_message": "Invalid file type", "error_type": "CustomException"}

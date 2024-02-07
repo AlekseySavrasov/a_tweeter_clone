@@ -1,4 +1,6 @@
-from fastapi import FastAPI, Response, Request
+"""Модуль для основных настроек приложения."""
+
+from fastapi import FastAPI, Request, Response
 from fastapi.logger import logger
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
@@ -7,12 +9,12 @@ from sqlalchemy import event
 
 from app.database import async_session, db_engine, initialize_table, metadata
 from app.models import Follower, Like, Tweet, User
-from app.routes import router, STATIC_PATH, UPLOAD_DIR
+from app.routes import STATIC_PATH, UPLOAD_DIR, router
 from app.utils import CustomException
 
-MODELS: set = {User, Follower, Tweet, Like}
+set_models: set = {User, Follower, Tweet, Like}
 
-for i_model in MODELS:
+for i_model in set_models:
     event.listen(i_model.__table__, "after_create", initialize_table)
 
 app: FastAPI = FastAPI(title="A tweeter clone")
@@ -30,15 +32,21 @@ app.add_middleware(
     allow_origins=origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "OPTIONS", "DELETE", "PATCH", "PUT"],
-    allow_headers=["Content-Type", "Set-Cookie", "Access-Control-Allow-Headers", "Access-Control-Allow-Origin",
-                   "Authorization"],
+    allow_headers=[
+        "Access-Control-Allow-Headers",
+        "Access-Control-Allow-Origin",
+        "Authorization",
+        "Content-Type",
+        "Set-Cookie",
+    ],
 )
 
 
 @app.on_event("startup")
 async def startup() -> None:
     """
-    Handles the startup event of the application.
+    Handle the startup event of the application.
+
     Connects to the database and creates all tables if they do not exist.
 
     :return: None
@@ -51,7 +59,9 @@ async def startup() -> None:
 @app.on_event("shutdown")
 async def shutdown_db_client() -> None:
     """
-    Handles the shutdown event of the application.
+
+    Handle the shutdown event of the application.
+
     Disconnects from the database and disposes of the database engine.
 
     :return: None
@@ -88,5 +98,5 @@ async def custom_exception_handler(request: Request, exc: CustomException) -> JS
     """
     return JSONResponse(
         status_code=exc.status_code,
-        content={"error_type": "CustomException", "error_message": exc.detail}
+        content={"error_type": "CustomException", "error_message": exc.detail},
     )

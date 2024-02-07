@@ -1,9 +1,14 @@
+"""Модуль для работы с моделями."""
+
 from typing import Any, Dict
 
-from sqlalchemy import ARRAY, Column, Integer, ForeignKey, MetaData, Sequence, String
+from sqlalchemy import ARRAY, Column, ForeignKey, Integer, MetaData, Sequence, String
 from sqlalchemy.orm import relationship
 
 from app.database import Base, metadata
+
+MAX_TWEET_LENGTH: int = 280
+MAX_NAME_LENGTH: int = 50
 
 
 class Like(Base):
@@ -20,9 +25,9 @@ class Like(Base):
     __tablename__: str = "likes"
     metadata: MetaData = metadata
 
-    id: Column[int] = Column(Integer, Sequence("like_id_seq"), primary_key=True, index=True)
-    user_id: Column[int] = Column(Integer, ForeignKey('users.id'), index=True)
-    tweet_id: Column[int] = Column(Integer, ForeignKey('tweets.id'), index=True)
+    id: int = Column(Integer, Sequence("like_id_seq"), primary_key=True, index=True)
+    user_id: int = Column(Integer, ForeignKey('users.id'), index=True)
+    tweet_id: int = Column(Integer, ForeignKey('tweets.id'), index=True)
     user: relationship = relationship("User", back_populates="likes", lazy="select")
     tweet: relationship = relationship("Tweet", back_populates="likes", lazy="select")
 
@@ -32,7 +37,7 @@ class Like(Base):
 
         :return: Словарь с данными объекта Like.
         """
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
 
 
 class Tweet(Base):
@@ -50,10 +55,10 @@ class Tweet(Base):
     __tablename__: str = "tweets"
     metadata: MetaData = metadata
 
-    id: Column[int] = Column(Integer, Sequence("tweet_id_seq"), primary_key=True, index=True)
-    tweet_data: Column[str] = Column(String(280), nullable=False)
-    tweet_media_ids: Column[ARRAY[int]] = Column(ARRAY(Integer))
-    user_id: Column[int] = Column(Integer, ForeignKey('users.id'), index=True)
+    id: int = Column(Integer, Sequence("tweet_id_seq"), primary_key=True, index=True)
+    tweet_data: str = Column(String(MAX_TWEET_LENGTH), nullable=False)
+    tweet_media_ids = Column(ARRAY(Integer))
+    user_id: int = Column(Integer, ForeignKey('users.id'), index=True)
     user: relationship = relationship("User", back_populates="tweets", lazy="select")
     likes: relationship = relationship("Like", back_populates="tweet", lazy="joined", cascade="all, delete-orphan")
 
@@ -71,7 +76,7 @@ class Tweet(Base):
 
         :return: Словарь с данными объекта Tweet.
         """
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
 
 
 class User(Base):
@@ -90,9 +95,9 @@ class User(Base):
     __tablename__: str = "users"
     metadata: MetaData = metadata
 
-    id: Column[int] = Column(Integer, Sequence("user_id_seq"), primary_key=True, index=True)
-    name: Column[str] = Column(String(50), nullable=False)
-    secret_key: Column[str] = Column(String, nullable=False)
+    id: int = Column(Integer, Sequence("user_id_seq"), primary_key=True, index=True)
+    name: str = Column(String(MAX_NAME_LENGTH), nullable=False)
+    secret_key: str = Column(String, nullable=False)
     tweets: relationship = relationship("Tweet", back_populates="user", lazy="select")
     likes: relationship = relationship("Like", back_populates="user", lazy="select")
     followers: relationship = relationship(
@@ -122,7 +127,7 @@ class User(Base):
 
         :return: Словарь с данными объекта User.
         """
-        return {c.name: getattr(self, c.name) for c in self.__table__.columns}
+        return {column.name: getattr(self, column.name) for column in self.__table__.columns}
 
 
 class Follower(Base):
@@ -138,8 +143,8 @@ class Follower(Base):
     __tablename__: str = "followers"
     metadata: MetaData = metadata
 
-    follower_id: Column[int] = Column(Integer, ForeignKey("users.id"), primary_key=True)
-    followed_id: Column[int] = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    follower_id: int = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    followed_id: int = Column(Integer, ForeignKey("users.id"), primary_key=True)
 
     follower: relationship = relationship("User", foreign_keys=[follower_id], back_populates="following")
     followed: relationship = relationship("User", foreign_keys=[followed_id], back_populates="followers")
@@ -156,5 +161,5 @@ class Media(Base):
     __tablename__: str = "medias"
     metadata: MetaData = metadata
 
-    id: Column[int] = Column(Integer, Sequence("media_id_seq"), primary_key=True, index=True)
-    file_name: Column[str] = Column(String)
+    id: int = Column(Integer, Sequence("media_id_seq"), primary_key=True, index=True)
+    file_name: str = Column(String)

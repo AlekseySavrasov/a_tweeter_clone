@@ -1,11 +1,13 @@
+"""Модуль основных настроек и фикстур для тестов."""
+
 import os
 
 import pytest_asyncio
-from httpx import AsyncClient
 from asgi_lifespan import LifespanManager
+from httpx import AsyncClient
 
 from app.database import db_engine, metadata
-from app.fastapi_app import app, UPLOAD_DIR
+from app.fastapi_app import UPLOAD_DIR, app
 
 
 @pytest_asyncio.fixture(autouse=True, scope="function")
@@ -18,11 +20,11 @@ async def prepare_db() -> None:
     :return: None
     """
     async with LifespanManager(app):
-        async with db_engine.begin() as conn:
-            await conn.run_sync(metadata.create_all)
+        async with db_engine.begin() as conn_create:
+            await conn_create.run_sync(metadata.create_all)
         yield
-        async with db_engine.begin() as conn:
-            await conn.run_sync(metadata.drop_all)
+        async with db_engine.begin() as conn_drop:
+            await conn_drop.run_sync(metadata.drop_all)
 
 
 @pytest_asyncio.fixture(scope="function")
@@ -33,8 +35,8 @@ async def client() -> AsyncClient:
     :return: Клиент для отправки запросов API.
     """
     async with LifespanManager(app):
-        async with AsyncClient(app=app, base_url="http://test") as client:
-            yield client
+        async with AsyncClient(app=app, base_url="http://test") as async_client:
+            yield async_client
 
 
 @pytest_asyncio.fixture(scope="function")
