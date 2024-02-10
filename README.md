@@ -30,8 +30,8 @@ API предоставляет функционал для создания и �
 
 ### Установка
 
-1. Склонировать репозиторий: git clone https://gitlab.skillbox.ru/aleksei_savrasov/python_advanced_diploma.git
-2. Перейти в директорию проекта: cd python_advanced_diploma
+1. Склонировать репозиторий: git clone https://github.com/AlekseySavrasov/a_tweeter_clone.git
+2. Перейти в директорию проекта: cd a_tweeter_clone
 
 ### Настройка
 
@@ -45,4 +45,4 @@ API предоставляет функционал для создания и �
 
 ## Авторы
 
-* Алексей Саврасов - [@aleksei_savrasov](https://gitlab.skillbox.ru/aleksei_savrasov)
+* Алексей Саврасов - [@aleksei_savrasov](https://github.com/AlekseySavrasov)
